@@ -1,4 +1,11 @@
-# EnvPit Community
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/logo-dark.png">
+    <img alt="EnvPit" src=".github/assets/logo-light.png" width="420">
+  </picture>
+</p>
+
+<h1 align="center">EnvPit Community</h1>
 
 Welcome to the community hub for **[EnvPit](https://envpit.com)** — a configuration &
 secrets management platform for engineering teams.
