@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EnvpitClient } from '../src/client.js';
 import { AuthenticationError, MissingKeyError, NetworkError, TypeMismatchError } from '../src/errors.js';
-import { fakeFetch, jsonResponse, networkFailure, problemResponse } from './test-utils.js';
+import { fakeFetch, jsonResponse, networkFailure, problemResponse, routedFetch } from './test-utils.js';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -161,7 +161,11 @@ describe('stale-while-revalidate on background refresh failure', () => {
     const client = await EnvpitClient.load({
       apiKey: 'epk_test',
       pollIntervalMs: 1000,
-      fetchImpl: fakeFetch([() => jsonResponse({ DATABASE_URL: 'postgres://good' }), networkFailure('timeout')]),
+      // routedFetch: the realtime channel also calls fetchImpl (for …/config/events) once
+      // pollIntervalMs > 0 — give it its own queue so it doesn't consume these two `config`
+      // responses out of order (no `events` route configured — it fails/retries quietly in
+      // the background, which this test doesn't assert on).
+      fetchImpl: routedFetch({ config: [() => jsonResponse({ DATABASE_URL: 'postgres://good' }), networkFailure('timeout')] }),
     });
 
     expect(client.get('DATABASE_URL')).toBe('postgres://good');
@@ -186,12 +190,14 @@ describe('stale-while-revalidate on background refresh failure', () => {
     const client = await EnvpitClient.load({
       apiKey: 'epk_test',
       pollIntervalMs: 1000,
-      fetchImpl: fakeFetch([
-        () => {
-          calls += 1;
-          return jsonResponse({ K: 'v' });
-        },
-      ]),
+      fetchImpl: routedFetch({
+        config: [
+          () => {
+            calls += 1;
+            return jsonResponse({ K: 'v' });
+          },
+        ],
+      }),
     });
 
     expect(calls).toBe(1);

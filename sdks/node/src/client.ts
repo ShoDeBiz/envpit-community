@@ -1,6 +1,17 @@
-import { MissingKeyError, TypeMismatchError } from './errors.js';
+import { SafeEmitter } from './emitter.js';
+import { EnvpitError, MissingKeyError, TypeMismatchError } from './errors.js';
+import { RealtimeTransport } from './realtime-transport.js';
 import { fetchConfig } from './transport.js';
-import type { CacheInfo, ConfigSnapshot, EnvpitClientOptions } from './types.js';
+import type {
+  CacheInfo,
+  ChangeTrigger,
+  ConfigSnapshot,
+  ConnectionMode,
+  ConnectionReason,
+  EnvpitClientEvents,
+  EnvpitClientOptions,
+  Logger,
+} from './types.js';
 
 const DEFAULT_HOST = 'https://envpit.com';
 const DEFAULT_POLL_INTERVAL_MS = 60_000;
@@ -23,6 +34,15 @@ const INTEGER_PATTERN = /^-?\d+$/;
  * serving the last good snapshot and records the failure on `cacheInfo`, it never throws or
  * evicts the cache. Only the FIRST load throws (there is nothing to fall back to yet), which
  * `load()` surfaces as a rejected Promise — a caller can never hold a half-initialized client.
+ *
+ * Realtime (bd:envpit-0t2z.2 UPDATE 2026-07-15 / bd:envpit-a9d): whenever `pollIntervalMs > 0`,
+ * the client ALSO opens a realtime (SSE) connection to `GET …/config/events` alongside the
+ * existing poll timer. A `config-changed` push triggers an immediate refetch; the poll timer
+ * remains the correctness backstop regardless (bounded staleness even if the realtime channel
+ * is degraded — `outputs/SPEC-envpit-a9d-1a-architecture.md` §2 NFR). `on('change', ...)` /
+ * `on('connection', ...)` / `on('error', ...)` are the push-style surfaces; `cacheInfo` is the
+ * pull-style equivalent (`outputs/SPEC-envpit-a9d-1b-ux.md` §3.2–§3.4 — the authoritative event
+ * shape/semantics this class implements verbatim).
  */
 export class EnvpitClient {
   private readonly apiKey: string;
@@ -30,11 +50,19 @@ export class EnvpitClient {
   private readonly pollIntervalMs: number;
   private readonly timeoutMs: number;
   private readonly fetchImpl: typeof fetch;
+  private readonly logger: Logger | undefined;
+  private readonly emitter: SafeEmitter<EnvpitClientEvents>;
 
   private snapshot: ConfigSnapshot | null = null;
   private fetchedAt: Date | null = null;
   private lastError: Error | null = null;
+  private etag: string | null = null;
+  private lastChangeAt: Date | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private realtime: RealtimeTransport | null = null;
+  private refreshMode: 'realtime' | 'polling' | 'off';
+  private realtimeSince: Date | null = null;
+  private sawFirstRealtimeConnect = false;
 
   private constructor(options: EnvpitClientOptions) {
     const apiKey = options.apiKey ?? process.env['ENVPIT_API_KEY'];
@@ -48,14 +76,18 @@ export class EnvpitClient {
     this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
+    this.logger = options.logger;
+    this.emitter = new SafeEmitter(this.logger);
+    this.refreshMode = this.pollIntervalMs > 0 ? 'polling' : 'off';
   }
 
   /**
    * The SDK's only entry point — replaces the old two-step `new EnvPit(options);
    * await client.start();`. Constructs the client, fetches the environment's config once
    * (rejects on failure — no cache exists yet to fall back to), and — unless
-   * `pollIntervalMs` is `0` — starts a background refresh timer. Resolves with a
-   * ready-to-read client; every `get*()` call on the result is synchronous.
+   * `pollIntervalMs` is `0` — starts the background poll timer AND the realtime (SSE)
+   * connection. Resolves with a ready-to-read client; every `get*()` call on the result is
+   * synchronous. `load()` resolving is NOT itself a `change` event (AC-U3 — no boot double-fire).
    */
   static async load(options: EnvpitClientOptions = {}): Promise<EnvpitClient> {
     const client = new EnvpitClient(options);
@@ -67,20 +99,76 @@ export class EnvpitClient {
     await this.refresh({ isFirstLoad: true });
     if (this.pollIntervalMs > 0) {
       this.timer = setInterval(() => {
-        void this.refresh({ isFirstLoad: false });
+        void this.refresh({ isFirstLoad: false, trigger: 'poll' });
       }, this.pollIntervalMs);
       // Never keep the host process alive just for background polling (Node-only API; a
       // no-op in non-Node fetch-compatible runtimes where `.unref` doesn't exist).
       this.timer.unref?.();
+
+      this.realtime = new RealtimeTransport({
+        host: this.host,
+        apiKey: this.apiKey,
+        fetchImpl: this.fetchImpl,
+        pollIntervalMs: this.pollIntervalMs,
+        callbacks: {
+          onChangeSignal: (pushedEtag) => this.handlePushSignal(pushedEtag),
+          onModeChange: (mode, reason, since) => this.handleConnectionModeChange(mode, reason, since),
+          onLog: (level, message) => this.logger?.[level]?.(message),
+        },
+      });
+      this.realtime.start();
     }
   }
 
-  /** Stops the background refresh timer. Idempotent. The last snapshot remains readable. */
+  private handlePushSignal(pushedEtag: string): void {
+    // The event's own etag lets us skip a wasted refetch when this is a duplicate
+    // notification we already reflect (e.g. a repeat after reconnect) — Sara §5.3.
+    if (this.etag !== null && pushedEtag === this.etag) return;
+    void this.refresh({ isFirstLoad: false, trigger: 'push' });
+  }
+
+  private handleConnectionModeChange(mode: ConnectionMode, reason: ConnectionReason, since: Date): void {
+    this.refreshMode = mode;
+    this.realtimeSince = mode === 'realtime' ? since : null;
+    this.emitter.emit('connection', { mode, since, reason });
+
+    // Self-healing catch-up: refetch whenever the channel (re)connects, in case a change was
+    // missed while it was down (Sara §5.2: "SDK refetches on every (re)connect"). Skipped on
+    // the very first realtime connect right after `load()` — that data is already fresh, and
+    // firing it there would just be a wasted duplicate of the bootstrap fetch.
+    if (mode === 'realtime') {
+      if (this.sawFirstRealtimeConnect) {
+        void this.refresh({ isFirstLoad: false, trigger: 'reconnect' });
+      }
+      this.sawFirstRealtimeConnect = true;
+    }
+  }
+
+  /** Stops the background poll timer AND the realtime (SSE) connection. Idempotent. The last
+   *  snapshot remains readable. Kept for backward compatibility with the pre-realtime SDK
+   *  surface — prefer `close()` in new code (same behavior, matches the published event-API
+   *  shape, `outputs/SPEC-envpit-a9d-1b-ux.md` §3.2: `client.close()` tears down stream + timer). */
   stop(): void {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
     }
+    this.realtime?.close();
+    this.realtime = null;
+  }
+
+  /** Alias of `stop()`. */
+  close(): void {
+    this.stop();
+  }
+
+  /** Subscribes `listener` to `event` (`'change' | 'error' | 'connection'`). Returns an
+   *  unsubscribe function — `const off = client.on('change', cb); off();`. A throwing
+   *  listener is caught and reported through the injected `logger`; it never crashes the host
+   *  app and never stops other listeners from running (`outputs/SPEC-envpit-a9d-1b-ux.md`
+   *  §3.1 principle 4). */
+  on<K extends keyof EnvpitClientEvents>(event: K, listener: (payload: EnvpitClientEvents[K]) => void): () => void {
+    return this.emitter.on(event, listener);
   }
 
   /** Point-in-time cache freshness/health — see `CacheInfo` for field meaning. */
@@ -89,6 +177,10 @@ export class EnvpitClient {
       fetchedAt: this.fetchedAt,
       ageMs: this.fetchedAt ? Date.now() - this.fetchedAt.getTime() : null,
       lastError: this.lastError,
+      etag: this.etag,
+      refreshMode: this.refreshMode,
+      realtimeSince: this.refreshMode === 'realtime' ? this.realtimeSince : null,
+      lastChangeAt: this.lastChangeAt,
     };
   }
 
@@ -146,17 +238,32 @@ export class EnvpitClient {
     return value === null || value === undefined ? undefined : value;
   }
 
-  private async refresh({ isFirstLoad }: { isFirstLoad: boolean }): Promise<void> {
+  private async refresh({ isFirstLoad, trigger }: { isFirstLoad: boolean; trigger?: ChangeTrigger }): Promise<void> {
     try {
-      const data = await fetchConfig({
+      const { snapshot, etag } = await fetchConfig({
         host: this.host,
         apiKey: this.apiKey,
         fetchImpl: this.fetchImpl,
         timeoutMs: this.timeoutMs,
       });
-      this.snapshot = data;
+      const previousSnapshot = this.snapshot;
+      this.snapshot = snapshot;
       this.fetchedAt = new Date();
       this.lastError = null;
+      this.etag = etag;
+
+      // Consistent-read guarantee (§3.1 principle 3): the snapshot above is already applied
+      // BEFORE we emit — a listener calling `client.get(...)` inside its handler sees the new
+      // values, never a torn state. No `change` on the very first load (AC-U3), and none when
+      // nothing actually differs (this section's own contract, and AC-U3's steady-state half).
+      if (!isFirstLoad && previousSnapshot !== null) {
+        const changedKeys = diffSnapshots(previousSnapshot, snapshot);
+        if (changedKeys.length > 0) {
+          const receivedAt = new Date();
+          this.lastChangeAt = receivedAt;
+          this.emitter.emit('change', { changedKeys, etag, receivedAt, trigger: trigger ?? 'poll' });
+        }
+      }
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       this.lastError = error;
@@ -165,6 +272,27 @@ export class EnvpitClient {
       if (isFirstLoad || this.snapshot === null) {
         throw error;
       }
+      this.logger?.warn?.(
+        `envpit: background config refresh failed (${error.name}): ${error.message} — serving last known values`,
+      );
+      if (error instanceof EnvpitError) {
+        this.emitter.emit('error', error);
+      }
     }
   }
+}
+
+/** Computes changed key NAMES between two in-memory snapshots — never sent over the wire, and
+ *  never includes values (log-safe by construction, §3.1 principle 1). A key absent from a
+ *  snapshot and a key present-with-`null` are treated identically ("unset"), matching
+ *  `readRaw()`'s own missing-vs-null equivalence. */
+function diffSnapshots(previous: ConfigSnapshot, next: ConfigSnapshot): string[] {
+  const keys = new Set([...Object.keys(previous), ...Object.keys(next)]);
+  const changed: string[] = [];
+  for (const key of keys) {
+    const before = previous[key] ?? null;
+    const after = next[key] ?? null;
+    if (before !== after) changed.push(key);
+  }
+  return changed.sort();
 }

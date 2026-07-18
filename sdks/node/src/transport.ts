@@ -14,7 +14,17 @@ export interface FetchConfigParams {
 
 const CONFIG_PATH = '/api/v1/config';
 
-export async function fetchConfig({ host, apiKey, fetchImpl, timeoutMs }: FetchConfigParams): Promise<ConfigSnapshot> {
+/** `fetchConfig`'s result — the resolved snapshot plus the `ETag` response header (bd:envpit-a9d
+ *  §4.1: a strong hash of version metadata only, never values), if the server sent one. Feeds
+ *  `CacheInfo.etag` and the SSE push payload's dedup check (`EnvpitClient`'s `handlePushSignal`) —
+ *  this SDK does not (yet) send `If-None-Match` itself; conditional-GET client support is a
+ *  tracked follow-up, out of this slice's scope (subscribe/callback API only). */
+export interface FetchConfigResult {
+  snapshot: ConfigSnapshot;
+  etag: string | null;
+}
+
+export async function fetchConfig({ host, apiKey, fetchImpl, timeoutMs }: FetchConfigParams): Promise<FetchConfigResult> {
   const url = `${host}${CONFIG_PATH}`;
   const response = await performRequest(url, apiKey, fetchImpl, timeoutMs);
 
@@ -29,7 +39,8 @@ export async function fetchConfig({ host, apiKey, fetchImpl, timeoutMs }: FetchC
     throw new NetworkError(`EnvPit returned HTTP ${response.status} while fetching config from ${url}.`);
   }
 
-  return parseJsonBody(response, url);
+  const snapshot = await parseJsonBody(response, url);
+  return { snapshot, etag: response.headers.get('etag') };
 }
 
 async function performRequest(url: string, apiKey: string, fetchImpl: typeof fetch, timeoutMs: number): Promise<Response> {
