@@ -324,6 +324,62 @@ describe('EnvpitClient realtime — listeners can never crash the host (AC-U7)',
     client.close();
   });
 
+  it('an async `change` listener that rejects does not crash the host process — no unhandled promise rejection (regression: bd:envpit-r59g)', async () => {
+    const sse = sseResponse();
+    const logger = recordingLogger();
+    const secondListenerCalls: ChangeEvent[] = [];
+
+    const client = await EnvpitClient.load({
+      apiKey: 'epk_test',
+      pollIntervalMs: 60_000,
+      logger,
+      fetchImpl: routedFetch({
+        config: [() => jsonResponse({ K: 'v1' }), () => jsonResponse({ K: 'v2' })],
+        events: [() => sse.response],
+      }),
+    });
+    await flushMicrotasks();
+
+    // Any unhandled rejection surfaced anywhere in the process during this test is exactly
+    // the failure mode Chris reproduced against dist/index.js (default Node behavior: exit
+    // code 1, process termination). Registering our own listener here doesn't mask a real
+    // bug — Node still delivers the event to every listener; the assertion below is what
+    // proves whether one fired.
+    const unhandledRejections: unknown[] = [];
+    const onUnhandledRejection = (reason: unknown): void => {
+      unhandledRejections.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandledRejection);
+
+    try {
+      // The exact idiomatic real-world shape from Chris's repro and the SDK's own docs guide
+      // (`outputs/SPEC-envpit-a9d-1b-ux.md` §4 step 3, "reconnect a pool when DATABASE_URL
+      // changes") — an ASYNC listener whose body throws/rejects, not a synchronous throw.
+      client.on('change', async () => {
+        await Promise.resolve(); // force a real microtask hop before rejecting
+        throw new Error('async-boom-bd-envpit-r59g');
+      });
+      client.on('change', (e) => secondListenerCalls.push(e));
+
+      expect(() => sse.push(configChangedFrame('"e2"'))).not.toThrow();
+      await flushMicrotasks();
+      // An unhandled rejection can surface on a later turn of the event loop than a
+      // synchronous throw would — give it several turns to appear before asserting silence.
+      await new Promise((resolve) => setImmediate(resolve));
+      await flushMicrotasks();
+    } finally {
+      process.off('unhandledRejection', onUnhandledRejection);
+    }
+
+    expect(unhandledRejections).toHaveLength(0); // <- this is what crashes the process pre-fix
+    expect(secondListenerCalls).toHaveLength(1); // the other (non-throwing) listener still ran
+    const errorLines = logger.lines.filter((l) => l.level === 'error');
+    expect(errorLines.some((l) => /listener threw \(event: change\)/.test(l.message))).toBe(true);
+    expect(errorLines.some((l) => /async-boom-bd-envpit-r59g/.test(l.message))).toBe(true);
+
+    client.close();
+  });
+
   it('a background refresh failure with no `error` listener registered does not throw/crash', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const client = await EnvpitClient.load({

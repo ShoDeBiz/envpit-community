@@ -33,22 +33,42 @@ export class SafeEmitter<Events extends object> {
     };
   }
 
-  /** Runs every listener registered for `event`, in subscription order. A throwing listener
-   *  is caught and logged; it never stops the remaining listeners from running, and never
-   *  propagates to the caller of `emit()`. */
+  /** Runs every listener registered for `event`, in subscription order. A throwing listener —
+   *  synchronous OR async (a returned promise that rejects) — is caught and logged; it never
+   *  stops the remaining listeners from running, and never propagates to the caller of
+   *  `emit()`, and never becomes an unhandled promise rejection (which would otherwise crash
+   *  the host process by default in Node — bd:envpit-r59g). `Listener<T>`'s declared return
+   *  type is `void`, but nothing stops a caller from passing an `async` function (TS's
+   *  void-return-type rule permits it); we defensively check the actual runtime return value
+   *  for a thenable regardless of what the type says. */
   emit<K extends keyof Events>(event: K, payload: Events[K]): void {
     const set = this.listeners.get(event);
     if (!set || set.size === 0) return;
     for (const listener of set) {
       try {
-        (listener as Listener<Events[K]>)(payload);
+        // Invoked through an `unknown`-returning view so a listener's actual runtime return
+        // value (e.g. a rejecting Promise from an `async` listener) is observable here, even
+        // though the public `Listener<T>` type says `void`.
+        const invoke = listener as unknown as (payload: Events[K]) => unknown;
+        const result = invoke(payload);
+        if (isThenable(result)) {
+          Promise.resolve(result).catch((err: unknown) => this.reportListenerError(event, err));
+        }
       } catch (err) {
-        this.logger?.error?.(
-          `envpit: a config event listener threw (event: ${String(event)}): ${describeThrown(err)}`,
-        );
+        this.reportListenerError(event, err);
       }
     }
   }
+
+  private reportListenerError<K extends keyof Events>(event: K, err: unknown): void {
+    this.logger?.error?.(
+      `envpit: a config event listener threw (event: ${String(event)}): ${describeThrown(err)}`,
+    );
+  }
+}
+
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+  return typeof value === 'object' && value !== null && typeof (value as { then?: unknown }).then === 'function';
 }
 
 function describeThrown(err: unknown): string {
