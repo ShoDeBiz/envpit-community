@@ -63,6 +63,13 @@ export class EnvpitClient {
   private refreshMode: 'realtime' | 'polling' | 'off';
   private realtimeSince: Date | null = null;
   private sawFirstRealtimeConnect = false;
+  // In-flight guard (bd:envpit-1mvf): the poll timer, push-triggered refreshes, and the
+  // reconnect catch-up refresh all call `refresh()`, and any two calls can have their HTTP
+  // responses resolve out of order. Every call captures the generation counter's value at the
+  // moment it's issued; a response is only applied if that generation is STILL the latest one
+  // issued by the time the response arrives. An overtaken (stale) response is discarded outright
+  // — see `refresh()`.
+  private refreshGeneration = 0;
 
   private constructor(options: EnvpitClientOptions) {
     const apiKey = options.apiKey ?? process.env['ENVPIT_API_KEY'];
@@ -239,6 +246,10 @@ export class EnvpitClient {
   }
 
   private async refresh({ isFirstLoad, trigger }: { isFirstLoad: boolean; trigger?: ChangeTrigger }): Promise<void> {
+    // In-flight guard (bd:envpit-1mvf): claim this call's generation BEFORE awaiting the fetch,
+    // so any refresh() issued later (poll tick, another push, reconnect catch-up) is guaranteed
+    // a strictly higher generation number.
+    const myGeneration = ++this.refreshGeneration;
     try {
       const { snapshot, etag } = await fetchConfig({
         host: this.host,
@@ -246,6 +257,12 @@ export class EnvpitClient {
         fetchImpl: this.fetchImpl,
         timeoutMs: this.timeoutMs,
       });
+
+      // A newer refresh() was issued while this one's fetch was in flight — this response is
+      // stale/superseded. Discard it silently: do not overwrite the already-fresher in-memory
+      // state, and do not fire a `change` event for a result that's about to be thrown away.
+      if (myGeneration !== this.refreshGeneration) return;
+
       const previousSnapshot = this.snapshot;
       this.snapshot = snapshot;
       this.fetchedAt = new Date();
@@ -265,6 +282,12 @@ export class EnvpitClient {
         }
       }
     } catch (err) {
+      // Same in-flight guard on the failure path: a stale/superseded refresh's failure must not
+      // clobber `cacheInfo.lastError` (or fire a spurious `error` event) once a newer refresh has
+      // already landed — only the latest-issued generation's outcome, success or failure, should
+      // ever be reflected in client state.
+      if (myGeneration !== this.refreshGeneration) return;
+
       const error = err instanceof Error ? err : new Error(String(err));
       this.lastError = error;
       // Stale-while-revalidate: once we have a snapshot, a refresh failure is recorded on

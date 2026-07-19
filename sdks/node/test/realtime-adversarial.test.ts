@@ -54,12 +54,18 @@ async function flushMicrotasks(turns = 5): Promise<void> {
   }
 }
 
-function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
+function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void; reject: (e: unknown) => void } {
   let resolve!: (v: T) => void;
-  const promise = new Promise<T>((r) => {
-    resolve = r;
+  let reject!: (e: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
   });
-  return { promise, resolve };
+  // A deferred() promise that nobody attaches a rejection handler to (the ones this file
+  // never actually rejects) would otherwise print an unhandled-rejection warning at process
+  // exit — harmless here, but noisy. Attach a no-op catch to a throwaway clone so it doesn't.
+  promise.catch(() => {});
+  return { promise, resolve, reject };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -597,9 +603,17 @@ describe('EnvpitClient realtime — no spurious `change` when the refetched snap
 
 // ---------------------------------------------------------------------------------------------
 // 7. RACE — concurrent overlapping refreshes (two push signals in flight simultaneously)
+//
+// Originally filed as bd:envpit-1mvf ("no in-flight guard" — the two tests below asserted the
+// ACTUAL BUGGY behavior: whichever HTTP response settled last won, regardless of which push was
+// semantically newer). Fixed by a monotonic generation counter in `EnvpitClient.refresh()`: each
+// call captures the generation it was issued at, and a response is only applied if that
+// generation is still the current (i.e. most-recently-issued) one when the response arrives —
+// otherwise it's a stale/superseded response and is discarded (no state mutation, no `change`/
+// `error` event). These tests now assert the FIXED behavior; see `client.ts` `refresh()`.
 // ---------------------------------------------------------------------------------------------
-describe('EnvpitClient realtime — concurrent overlapping refresh() calls (no in-flight guard)', () => {
-  it('two rapid pushes with DIFFERENT new etags, whose refetches resolve OUT OF ORDER, let the OLDER response win — client can regress to stale data with no error surfaced', async () => {
+describe('EnvpitClient realtime — concurrent overlapping refresh() calls (generation guard, envpit-1mvf)', () => {
+  it('two rapid pushes with DIFFERENT new etags, whose refetches resolve OUT OF ORDER (newer settles first, older settles last): the stale older response is discarded — client keeps the newer state, no regression, no spurious `change` event', async () => {
     const sse = sseResponse();
     const deferredA = deferred<Response>(); // response for the FIRST push ("eA")
     const deferredB = deferred<Response>(); // response for the SECOND push ("eB")
@@ -624,11 +638,12 @@ describe('EnvpitClient realtime — concurrent overlapping refresh() calls (no i
 
     // Two pushes fired back-to-back, before either refetch has resolved — both etags are new
     // relative to the client's current (null) etag, so BOTH trigger a refresh() concurrently.
+    // "eA" is issued first (generation N), "eB" second (generation N+1, the latest issued).
     sse.push('event: config-changed\ndata: {"etag":"\\"eA\\""}\n\n');
     sse.push('event: config-changed\ndata: {"etag":"\\"eB\\""}\n\n');
     await flushMicrotasks();
 
-    // Resolve B (the semantically NEWER push, sent second) FIRST, then A (older, sent first)
+    // Resolve B (the LATEST-ISSUED push) FIRST, then A (the now-superseded, earlier-issued push)
     // LAST — modeling ordinary network/scheduling jitter, which the SDK cannot control.
     deferredB.resolve(
       new Response(JSON.stringify({ K: 'vB' }), {
@@ -645,19 +660,116 @@ describe('EnvpitClient realtime — concurrent overlapping refresh() calls (no i
     );
     await flushMicrotasks();
 
-    // FINDING: `EnvpitClient.refresh()` has no in-flight/generation guard against overlapping
-    // concurrent calls. Whichever HTTP response settles LAST wins, irrespective of which push
-    // was semantically newer. Here that means the client ends up serving "vA"/"eA" — the OLDER
-    // state — even though "eB" (newer) was already applied and visible via `change` a moment
-    // earlier. This assertion documents the ACTUAL (buggy) behavior observed, not the intended
-    // one; see the accompanying bd bug report for the correctness gap this proves.
-    expect(client.get('K')).toBe('vA');
-    expect(client.cacheInfo.etag).toBe('"eA"');
+    // FIX (envpit-1mvf): B is still the latest-issued generation when its response arrives, so
+    // it's applied normally. When A's response arrives afterwards, a newer generation (B) has
+    // already been issued — A's generation is stale, so its result is discarded outright: it
+    // must NOT overwrite the fresher "vB"/"eB" state, and must NOT fire a second `change` event.
+    expect(client.get('K')).toBe('vB');
+    expect(client.cacheInfo.etag).toBe('"eB"');
 
-    // The listener saw a "flicker": v0 -> vB (looks correct) -> vA (a silent REGRESSION with no
-    // error, no warning, indistinguishable from a legitimate change to a caller).
-    expect(changes.map((e) => e.etag)).toEqual(['"eB"', '"eA"']);
-    expect(changes[1]?.changedKeys).toEqual(['K']); // reported as an ordinary, valid change
+    // Exactly one `change` event — for the applied "eB" response. The discarded "eA" response
+    // produces no event at all (not even a suppressed/no-op one to inspect).
+    expect(changes).toHaveLength(1);
+    expect(changes[0]?.etag).toBe('"eB"');
+    expect(changes[0]?.changedKeys).toEqual(['K']);
+
+    client.close();
+  });
+
+  it('two rapid pushes whose refetches resolve IN issue order (older settles first, newer settles last): the older response is STILL discarded on arrival, because a newer generation was already issued before it resolved — not merely "last write wins"', async () => {
+    const sse = sseResponse();
+    const deferredA = deferred<Response>();
+    const deferredB = deferred<Response>();
+
+    const client = await EnvpitClient.load({
+      apiKey: 'epk_test',
+      pollIntervalMs: 60_000,
+      fetchImpl: routedFetch({
+        config: [() => jsonResponse({ K: 'v0' }), () => deferredA.promise, () => deferredB.promise],
+        events: [() => sse.response],
+      }),
+    });
+    await flushMicrotasks();
+
+    const changes: ChangeEvent[] = [];
+    client.on('change', (e) => changes.push(e));
+
+    sse.push('event: config-changed\ndata: {"etag":"\\"eA\\""}\n\n');
+    sse.push('event: config-changed\ndata: {"etag":"\\"eB\\""}\n\n');
+    await flushMicrotasks();
+
+    // A (older-issued) resolves FIRST this time — but B (newer-issued) was already in flight
+    // before A resolved, so A is already stale generation-wise the instant it arrives.
+    deferredA.resolve(
+      new Response(JSON.stringify({ K: 'vA' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json', etag: '"eA"' },
+      }),
+    );
+    await flushMicrotasks();
+    deferredB.resolve(
+      new Response(JSON.stringify({ K: 'vB' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json', etag: '"eB"' },
+      }),
+    );
+    await flushMicrotasks();
+
+    // A never gets applied at all (not even transiently) — only B's (the latest-issued
+    // generation's) result is ever reflected in state or emitted as a `change`.
+    expect(client.get('K')).toBe('vB');
+    expect(client.cacheInfo.etag).toBe('"eB"');
+    expect(changes).toHaveLength(1);
+    expect(changes[0]?.etag).toBe('"eB"');
+
+    client.close();
+  });
+
+  it('a stale (superseded) refresh that FAILS after a newer refresh already applied successfully must not clobber `cacheInfo.lastError` and must not emit a spurious `error` event', async () => {
+    const sse = sseResponse();
+    const deferredA = deferred<Response>(); // will REJECT — models a network failure for the stale push
+    const deferredB = deferred<Response>(); // resolves fine — the latest-issued push
+
+    const client = await EnvpitClient.load({
+      apiKey: 'epk_test',
+      pollIntervalMs: 60_000,
+      fetchImpl: routedFetch({
+        config: [() => jsonResponse({ K: 'v0' }), () => deferredA.promise, () => deferredB.promise],
+        events: [() => sse.response],
+      }),
+    });
+    await flushMicrotasks();
+
+    const changes: ChangeEvent[] = [];
+    const errors: Error[] = [];
+    client.on('change', (e) => changes.push(e));
+    client.on('error', (e) => errors.push(e));
+
+    sse.push('event: config-changed\ndata: {"etag":"\\"eA\\""}\n\n');
+    sse.push('event: config-changed\ndata: {"etag":"\\"eB\\""}\n\n');
+    await flushMicrotasks();
+
+    // B (latest-issued) succeeds first, applying "vB"/"eB" and leaving `lastError` null.
+    deferredB.resolve(
+      new Response(JSON.stringify({ K: 'vB' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json', etag: '"eB"' },
+      }),
+    );
+    await flushMicrotasks();
+    expect(client.cacheInfo.lastError).toBeNull();
+
+    // A (now-stale, superseded generation) fails afterwards — this must be silently discarded,
+    // exactly like a stale success would be: it must not set `lastError`, must not emit `error`,
+    // and must not disturb the already-applied "vB"/"eB" state.
+    deferredA.reject(new TypeError('connect ECONNREFUSED'));
+    await flushMicrotasks();
+
+    expect(client.get('K')).toBe('vB');
+    expect(client.cacheInfo.etag).toBe('"eB"');
+    expect(client.cacheInfo.lastError).toBeNull();
+    expect(errors).toHaveLength(0);
+    expect(changes).toHaveLength(1); // only B's change — A produced neither a change nor an error
 
     client.close();
   });
