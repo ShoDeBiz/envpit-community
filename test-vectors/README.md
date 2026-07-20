@@ -19,16 +19,25 @@ whatever inputs/expectations that family needs — see each file for its exact s
 single generic case schema across families because the families test structurally different
 things (parser input/output, HTTP-condition/error-type mapping, etc.).
 
-## Families (suiteVersion 1.0.0)
+## Families (suiteVersion 1.1.0)
 
-| File | What it tests | Consumed by Node today? |
-|---|---|---|
-| `sse-frames.json` | `SseFrameParser` input chunking -> output frames | Yes — `sdks/node/test/vectors/sse-frames.vectors.test.ts` |
-| `push-payloads.json` | SSE `config-changed`/unknown-event frame -> refetch or ignore | Yes — `sdks/node/test/vectors/push-payloads.vectors.test.ts` |
-| `getters.json` | Typed getter (`get`/`getInt`/`getBoolean`) value/default/error behavior | Yes — `sdks/node/test/vectors/getters.vectors.test.ts` |
-| `snapshot-diff.json` | Before/after snapshot -> sorted changed key names | Yes — `sdks/node/test/vectors/snapshot-diff.vectors.test.ts` |
-| `error-mapping.json` | HTTP status / transport condition -> SDK error type | Yes — `sdks/node/test/vectors/error-mapping.vectors.test.ts` |
-| `hashing.json` | SHA-256 rollout-bucketing determinism | **Not yet** — forward provision for bd:envpit-0t2z.6 (Feature Flags SDK support); no shipped SDK language buckets anything today. Reserved now so Python/Go/Java prove identical bucketing against the exact ground truth (`envpit` main repo's `libs/shared/src/flag-evaluation-vectors.ts`) from day one. |
+| File | What it tests | Consumed by Node today? | Consumed by Python today? |
+|---|---|---|---|
+| `sse-frames.json` | `SseFrameParser` input chunking -> output frames | Yes — `sdks/node/test/vectors/sse-frames.vectors.test.ts` | Yes — `sdks/python/tests/test_sse_frames_vectors.py` |
+| `push-payloads.json` | SSE `config-changed`/unknown-event frame -> refetch or ignore | Yes — `sdks/node/test/vectors/push-payloads.vectors.test.ts` | Yes — `sdks/python/tests/test_push_payloads_vectors.py` |
+| `getters.json` | Typed getter (`get`/`getInt`/`getBoolean`) value/default/error behavior | Yes — `sdks/node/test/vectors/getters.vectors.test.ts` | Yes — `sdks/python/tests/test_getters_vectors.py` |
+| `snapshot-diff.json` | Before/after snapshot -> sorted changed key names | Yes — `sdks/node/test/vectors/snapshot-diff.vectors.test.ts` | Yes — `sdks/python/tests/test_snapshot_diff_vectors.py` |
+| `error-mapping.json` | HTTP status / transport condition -> SDK error type | Yes — `sdks/node/test/vectors/error-mapping.vectors.test.ts` | Yes — `sdks/python/tests/test_error_mapping_vectors.py` |
+| `hashing.json` | SHA-256 rollout-bucketing determinism | **Not yet** — forward provision for bd:envpit-0t2z.6 (Feature Flags SDK support); no shipped SDK language buckets anything today. Reserved now so Python/Go/Java prove identical bucketing against the exact ground truth (`envpit` main repo's `libs/shared/src/flag-evaluation-vectors.ts`) from day one. | Yes — `sdks/python/tests/test_hashing_vectors.py` |
+| `error-messages.json` | Per-language MESSAGE TEXT/SHAPE for the 4-class error taxonomy (Uma DX spec flag #6) — a different concern from `error-mapping.json` (type only, not text) | Yes — `sdks/node/test/vectors/error-messages.vectors.test.ts` | Yes — `sdks/python/tests/test_error_messages_vectors.py` |
+| `adversarial-payloads.json` | Malformed/oversized/deeply-nested JSON body + SSE line vectors (Sentinel AC-SEC-SDK3-2) — parser must never crash/hang/OOM | Partial — `sdks/node/test/vectors/adversarial-payloads.vectors.test.ts` consumes every case; 2 of 8 are documented GAP-canary assertions (Node has no body/SSE-line byte cap yet, tracked bd:envpit-aw7l) rather than hard pass/fail | Yes, fully — `sdks/python/tests/test_adversarial_payloads_vectors.py` (Python implements both caps for real) |
+
+`error-messages.json` and `adversarial-payloads.json` were backfilled after Slice 0 (bd:envpit-0t2z.3):
+both were referenced in the design docs / Sentinel's threat model but did not actually land with
+the original 6 families — flagged honestly by the Python implementation dispatch rather than
+silently worked around with a Python-only bespoke copy of a "shared" format (see each file's own
+`notes` field for what was superseded and what Python-specific coverage was deliberately kept, per
+§3 below).
 
 Not every existing Node inline test was moved here — only the vector-shaped, pure-data families.
 Concurrency/lifecycle behavior (generation-guard, safe-listener dispatch, quiet-retry cadence,

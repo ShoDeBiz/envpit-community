@@ -247,6 +247,13 @@ must not prevent the host process from exiting when it otherwise would.
   this pattern outside this one documented carve-out** — e.g. the Go `Or`-family's log line
   (Sara §2.2 draft) must omit the value entirely (AC-SEC-SDK3-6), which is exactly why this
   invariant has a documented exception rather than a silent one.
+- **Backfill (bd:envpit-0t2z.3): `test-vectors/error-messages.json`** now operationalizes this
+  invariant's MESSAGE TEXT/SHAPE dimension (Uma AC-UX3-03 copy-parity, Sentinel AC-SEC-SDK3-6
+  value-freedom) as data, not just prose — 9 cases spanning all 4 error classes + the background-
+  refresh log line + the Go-only Or-family log line, each case's `valueFreeCarveOut` field marking
+  the ONE documented exception above and asserting every other case is value-free by construction.
+  Node: `test/vectors/error-messages.vectors.test.ts` (FULL, incl. the carve-out-is-exactly-one
+  assertion). Python: `tests/test_error_messages_vectors.py` (FULL, same).
 - **GAP (documented) — `.unref()`/daemon-thread non-blocking behavior:** not directly asserted by
   any test (the test suite's own clean exit is indirect evidence, not a positive assertion).
   Each language's future implementation should add its own `INV-SDK-11`-tagged test proving a
@@ -276,6 +283,69 @@ the SSE connect).
 
 ---
 
+### INV-SDK-13 (PROPOSED — not yet ratified by Sara; flagged, not force-fit) — adversarial payload defense: bounded body size, SSE line size, and JSON depth; never crash/hang/OOM
+
+**Why this is proposed as a NEW invariant rather than mapped onto an existing one (bd:envpit-0t2z.3
+backfill):** Sentinel's `outputs/THREATMODEL-envpit-0t2z-3.md` F2 / AC-SEC-SDK3-2 requires every
+SDK's parser to defend against a malicious/compromised server or TLS-bypassed MITM sending an
+oversized body, an oversized/unterminated SSE line, or a pathologically deep JSON structure —
+this genuinely doesn't fit any of INV-SDK-1..12 above (closest is INV-SDK-11, but that's about
+VALUE/KEY secrecy in messages, not memory-safety under adversarial input; INV-SDK-3 is about
+disk persistence). Rather than force-fitting this under an unrelated ID, it's flagged here as a
+PROPOSED 13th invariant — Dave (implementation) does not have design authority to ratify a new
+architecture-level invariant; Sara should confirm/renumber/reject at her discretion. Until
+ratified, treat this section as informative, not normative.
+
+**Statement (proposed):** The config-fetch response body is read with a maximum byte cap (no
+unbounded buffering before the cap is checked). The realtime SSE line reader has a maximum
+per-line byte cap (an unterminated line past the cap is treated as a stream failure, not grown
+forever). A pathologically deep/nested JSON structure never causes an uncaught process crash, an
+unbounded hang, or unbounded memory growth — a parser may either parse it successfully (if its
+underlying JSON implementation is non-recursive/iterative) or reject it cleanly (if recursion-
+based, e.g. via a language's natural recursion-depth guard, or an explicit depth cap for
+parsers — like a future Java's — that are recursion-vulnerable by construction).
+
+**Vector coverage:** `test-vectors/adversarial-payloads.json` (8 cases) — see that file's own
+`description`/`notes` for the exact byte-cap/depth numbers and the safety-vs-single-outcome
+distinction for the depth-bomb case.
+
+**Node evidence + coverage — PARTIAL, 2 KNOWN GAPS (same convention as INV-SDK-3's GAP marker):**
+- Body-size cap: **GAP.** `src/transport.ts`'s `parseJsonBody` calls `response.json()` with no
+  byte cap — verified empirically (a 6 MiB body is accepted without error). Tracked as a Node
+  parity-gap on bd:envpit-aw7l (Sentinel's threat model already named this, F2/AC-SEC-SDK3-2(a));
+  NOT fixed by this backfill (out of scope — test-infra only). Node's consuming test
+  (`test/vectors/adversarial-payloads.vectors.test.ts`) documents this as a canary, not a
+  hard-fail assertion.
+- SSE line-size cap: **GAP**, same reasoning. `src/sse-parser.ts`'s `SseFrameParser` buffer grows
+  unbounded for an unterminated line — verified empirically (a 200,000-byte unterminated line
+  does not throw). Tracked on bd:envpit-aw7l; documented canary, not fixed here.
+- JSON depth bomb: **FULL, genuinely passing.** V8's `JSON.parse` is non-recursive and handles a
+  200,000-deep nested array in milliseconds with no crash/hang — verified empirically. Compliant
+  with the proposed invariant's "either outcome is safe" wording.
+- Malformed JSON (unterminated string, invalid `\u` escape, trailing garbage): **FULL, genuinely
+  passing.** All three already throw a catchable `SyntaxError`, mapped to `NetworkError` by the
+  shipped `parseJsonBody` catch block — verified empirically, no behavior change needed.
+
+**Python evidence + coverage — FULL, no gaps.** `src/envpit/transport.py`'s `DEFAULT_BODY_BYTE_CAP`
+(5 MiB, incremental-read-and-check) and `src/envpit/sse_parser.py`'s `max_line_bytes` (64 KiB
+default, `SseLineTooLongError`) are both real, shipped caps — Python's own hardening, not a
+Node-parity copy (Node has neither). `tests/test_adversarial_payloads_vectors.py` — all 8 cases
+pass as genuine positive assertions.
+
+**Discovered-but-out-of-scope, reported not force-fit (bd:envpit-0t2z.3 backfill):** neither
+Node's `transport.ts` nor a naive port validates that the config-fetch response body's TOP-LEVEL
+JSON value is actually an object — Node accepts a bare array/number/string/null as a "successful
+load" (verified: does not crash, due to JS's permissive bracket-property access on non-object
+values degrading every getter to `MissingKeyError`; `null` specifically produces a confusing
+"config not loaded yet" message instead of a clear load-time error). Python's `_parse_json_body`
+DOES validate this (`isinstance(parsed, dict)`). This is a real Node/Python inconsistency, but
+NOT a crash/hang/OOM concern (out of this proposed invariant's scope as stated) — recommend a
+separate, dedicated follow-up bd issue rather than expanding INV-SDK-13 to cover it. Python's own
+coverage of its own correct behavior here is intentionally KEPT (not deleted) as a Python-only
+test (`tests/test_json_caps.py`, trimmed of its now-superseded byte/line/depth-cap duplicates).
+
+---
+
 ## Summary — Node coverage by invariant
 
 | ID | Statement (short) | Node coverage |
@@ -290,5 +360,6 @@ the SSE connect).
 | INV-SDK-8 | poll is the correctness backstop; `0` = fully off | FULL |
 | INV-SDK-9 | etag dedup on push; reconnect catch-up (not on first connect) | FULL |
 | INV-SDK-10 | quiet-retry/degraded diagnostics cadence | FULL |
-| INV-SDK-11 | no value/API-key in errors/logs; non-blocking background work | PARTIAL (one documented carve-out + one unasserted sub-case) |
+| INV-SDK-11 | no value/API-key in errors/logs; non-blocking background work | PARTIAL (one documented carve-out + one unasserted sub-case; `error-messages.json` now operationalizes the message-text dimension) |
 | INV-SDK-12 | env-var auto-detect, explicit wins, `X-Api-Key` header | FULL |
+| INV-SDK-13 (PROPOSED, not ratified) | adversarial payload defense — bounded body/SSE-line size, safe JSON depth handling | PARTIAL (2 documented GAPs: body-size cap, SSE line-size cap — both pre-existing, tracked bd:envpit-aw7l) |

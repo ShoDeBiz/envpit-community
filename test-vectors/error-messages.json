@@ -1,0 +1,229 @@
+{
+  "description": "Per-language MESSAGE TEXT/SHAPE for the shipped 4-class error taxonomy (`AuthenticationError`/`NetworkError`/`MissingKeyError`/`TypeMismatchError`) plus the one Go-only Or-family log line — this is a DIFFERENT concern from `error-mapping.json` (which only proves 'HTTP condition X produces error TYPE Y', not what the message text says). Backfilled per Uma's DX spec flag #6 (`outputs/SPEC-envpit-0t2z-3-1b-ux.md` §2.1: 'Every message below is a vector-suite row... a new error-messages.json family'). Ground truth: sdks/node/src/{errors,client,transport}.ts + sdks/python/src/envpit/{errors,client,transport}.py (both read in full and verified against their real, shipped literal strings — NOT copied from the design doc's proposed copy where the two differ). Go/Java entries are forward-provisioned (design-doc copy, `outputs/SPEC-envpit-0t2z-3-1b-ux.md` §2.2/§1.2/§1.3) — same convention as `hashing.json`: no shipped Go/Java SDK exists yet, so those columns aren't consumed by any test today, reserved so Go/Java prove identical copy from day one once they start.\n\nPer-language copy parity is 'same information, same order, per-language surface convention on top' (ADR-S3-08 lineage) — NOT byte-identical across languages. Node/Python/Java use sentence-case prose; Go uses its own convention (lowercase first word, no trailing period, `envpit:` package prefix). This file's `messages.<language>.message` is each language's own EXACT literal template, not a shared template with substitution.\n\n`{url}` throughout every language's message column below is written literally as the resolved URL a consuming test gets when it explicitly passes `host: \"https://example.test\"` (`CONFIG_PATH = \"/api/v1/config\"`) — every language's consuming test for THIS family MUST use that exact host (not its own SDK's default host) so the literal message strings below are directly, byte-for-byte comparable/copy-pasteable into each language's test, matching how sse-frames.json/getters.json embed fully-literal expected values rather than parameterized templates.",
+  "notes": [
+    "Node's `no-api-key-found` case ships a PLAIN `Error` (NOT part of the `EnvpitError` hierarchy) — a known, ALREADY-DOCUMENTED, intentionally-NOT-fixed-here divergence (Uma SPEC-envpit-0t2z-3-1b-ux.md §2.2 flag / §0.1; Sentinel THREATMODEL-envpit-0t2z-3.md). The three new languages use their AuthenticationError-equivalent instead (Uma's recommendation). Node's own alignment is deferred to the coordinated all-4-SDK follow-up tracked at bd:envpit-aw7l — do not 'fix' Node unilaterally from this file or its consuming test.",
+    "Exactly ONE documented value-echo carve-out exists in this whole family: `type-mismatch-integer`'s message intentionally includes the raw offending value (`rawValue: \"abc\"` in the message text) — this is CONFORMANCE.md INV-SDK-11's one documented, accepted exception (shipped-Node parity, ADR-S3-01; Sentinel THREATMODEL-envpit-0t2z-3.md F6). Every OTHER case in this file, INCLUDING the Go-only Or-family log line, is value-free by construction (AC-SEC-SDK3-6) — a consuming language's test SHOULD assert the raw value substring is verifiably ABSENT from every non-carve-out case's message, and present (by design) only in the carve-out case.",
+    "`background-refresh-failed-http-500`'s `{msg}` portion is not an independently-authored string — it is composed, end-to-end, from the SAME `NetworkError` produced by the `non-2xx-response` case (case order matters: this is what every real implementation actually emits when a background poll/push refresh's underlying fetch fails with HTTP 500, not a shortcut).",
+    "The Go `go-or-family-type-mismatch-value-free` case has no Node/Python equivalent to consume — neither language ships an `Or`-family default-returning getter (Go-only surface, Sara §2.2/R4). Its `languages` field restricts it to `[\"go\"]`; Node/Python consuming tests MUST skip it, not fail it.",
+    "Per Uma AC-UX3-03: every produced message must match its language's template verbatim (placeholders substituted) AND contain no config value or API-key substring outside the one documented carve-out above."
+  ],
+  "cases": [
+    {
+      "name": "no-api-key-found",
+      "errorClassSemantic": "AuthenticationError",
+      "trigger": "load() called with no explicit apiKey and no ENVPIT_API_KEY environment variable set",
+      "valueFreeCarveOut": false,
+      "apiKeyMissing": true,
+      "messages": {
+        "node": {
+          "errorClass": "Error",
+          "message": "EnvPit: no API key found. Set the ENVPIT_API_KEY environment variable, or pass { apiKey } to `EnvpitClient.load(...)`."
+        },
+        "python": {
+          "errorClass": "AuthenticationError",
+          "message": "EnvPit: no API key found. Set the ENVPIT_API_KEY environment variable, or pass api_key=... to envpit.load()."
+        },
+        "go": {
+          "errorClass": "AuthenticationError",
+          "message": "envpit: no API key found — set the ENVPIT_API_KEY environment variable, or pass envpit.WithAPIKey(...) to Load"
+        },
+        "java": {
+          "errorClass": "AuthenticationException",
+          "message": "EnvPit: no API key found. Set the ENVPIT_API_KEY environment variable, or call .apiKey(...) on the builder."
+        }
+      }
+    },
+    {
+      "name": "api-key-rejected-401",
+      "errorClassSemantic": "AuthenticationError",
+      "trigger": "config-fetch response is HTTP 401",
+      "valueFreeCarveOut": false,
+      "condition": { "status": 401 },
+      "messages": {
+        "node": {
+          "errorClass": "AuthenticationError",
+          "message": "API key rejected (HTTP 401). It may be revoked, expired, or mistyped. Check Project → API Keys in EnvPit."
+        },
+        "python": {
+          "errorClass": "AuthenticationError",
+          "message": "API key rejected (HTTP 401). It may be revoked, expired, or mistyped. Check Project → API Keys in EnvPit."
+        },
+        "go": {
+          "errorClass": "AuthenticationError",
+          "message": "envpit: API key rejected (HTTP 401) — it may be revoked, expired, or mistyped; check Project → API Keys in EnvPit"
+        },
+        "java": {
+          "errorClass": "AuthenticationException",
+          "message": "API key rejected (HTTP 401). It may be revoked, expired, or mistyped. Check Project → API Keys in EnvPit."
+        }
+      }
+    },
+    {
+      "name": "could-not-reach-server-timeout",
+      "errorClassSemantic": "NetworkError",
+      "trigger": "config-fetch request times out (fatal on first load; event-only after)",
+      "valueFreeCarveOut": false,
+      "condition": { "transportFailure": "timeout" },
+      "messages": {
+        "node": {
+          "errorClass": "NetworkError",
+          "message": "Could not reach EnvPit at https://example.test/api/v1/config (timed out). Check your network/proxy and https://status.envpit.com."
+        },
+        "python": {
+          "errorClass": "NetworkError",
+          "message": "Could not reach EnvPit at https://example.test/api/v1/config (timed out). Check your network/proxy and https://status.envpit.com."
+        },
+        "go": {
+          "errorClass": "NetworkError",
+          "message": "envpit: could not reach EnvPit at https://example.test/api/v1/config: timed out — check your network/proxy and https://status.envpit.com"
+        },
+        "java": {
+          "errorClass": "NetworkException",
+          "message": "Could not reach EnvPit at https://example.test/api/v1/config (timed out). Check your network/proxy and https://status.envpit.com."
+        }
+      }
+    },
+    {
+      "name": "non-2xx-response",
+      "errorClassSemantic": "NetworkError",
+      "trigger": "config-fetch response is a non-2xx status that isn't an auth failure (HTTP 500)",
+      "valueFreeCarveOut": false,
+      "condition": { "status": 500 },
+      "messages": {
+        "node": {
+          "errorClass": "NetworkError",
+          "message": "EnvPit returned HTTP 500 while fetching config from https://example.test/api/v1/config."
+        },
+        "python": {
+          "errorClass": "NetworkError",
+          "message": "EnvPit returned HTTP 500 while fetching config from https://example.test/api/v1/config."
+        },
+        "go": {
+          "errorClass": "NetworkError",
+          "message": "envpit: EnvPit returned HTTP 500 while fetching config from https://example.test/api/v1/config"
+        },
+        "java": {
+          "errorClass": "NetworkException",
+          "message": "EnvPit returned HTTP 500 while fetching config from https://example.test/api/v1/config."
+        }
+      }
+    },
+    {
+      "name": "invalid-json-response",
+      "errorClassSemantic": "NetworkError",
+      "trigger": "config-fetch response is HTTP 200 but the body is not valid JSON",
+      "valueFreeCarveOut": false,
+      "condition": { "transportFailure": "invalid-json-body" },
+      "messages": {
+        "node": {
+          "errorClass": "NetworkError",
+          "message": "EnvPit returned an invalid JSON response from https://example.test/api/v1/config."
+        },
+        "python": {
+          "errorClass": "NetworkError",
+          "message": "EnvPit returned an invalid JSON response from https://example.test/api/v1/config."
+        },
+        "go": {
+          "errorClass": "NetworkError",
+          "message": "envpit: EnvPit returned an invalid JSON response from https://example.test/api/v1/config"
+        },
+        "java": {
+          "errorClass": "NetworkException",
+          "message": "EnvPit returned an invalid JSON response from https://example.test/api/v1/config."
+        }
+      }
+    },
+    {
+      "name": "missing-key",
+      "errorClassSemantic": "MissingKeyError",
+      "trigger": "get(key) called for a key not present in the loaded snapshot and no default supplied",
+      "valueFreeCarveOut": false,
+      "getter": { "snapshot": {}, "kind": "string", "key": "DATABSE_URL" },
+      "messages": {
+        "node": {
+          "errorClass": "MissingKeyError",
+          "message": "Config key \"DATABSE_URL\" is not set and no default value was provided. Pass a default (e.g. envpit.get(\"DATABSE_URL\", \"fallback\")) if this key is allowed to be absent."
+        },
+        "python": {
+          "errorClass": "MissingKeyError",
+          "message": "Config key \"DATABSE_URL\" is not set and no default value was provided. Pass a default (e.g. client.get(\"DATABSE_URL\", \"fallback\")) if this key is allowed to be absent."
+        },
+        "go": {
+          "errorClass": "MissingKeyError",
+          "message": "envpit: config key \"DATABSE_URL\" is not set and no default was provided (use GetOr(\"DATABSE_URL\", fallback) if this key is allowed to be absent)"
+        },
+        "java": {
+          "errorClass": "MissingKeyException",
+          "message": "Config key \"DATABSE_URL\" is not set and no default value was provided. Pass a default (e.g. client.get(\"DATABSE_URL\", \"fallback\")) if this key is allowed to be absent."
+        }
+      }
+    },
+    {
+      "name": "type-mismatch-integer",
+      "errorClassSemantic": "TypeMismatchError",
+      "trigger": "getInt(key) called for a key whose stored value doesn't parse as a base-10 integer",
+      "valueFreeCarveOut": true,
+      "getter": { "snapshot": { "PORT": "abc" }, "kind": "int", "key": "PORT" },
+      "messages": {
+        "node": {
+          "errorClass": "TypeMismatchError",
+          "message": "Config key \"PORT\" is not a valid integer (got \"abc\")."
+        },
+        "python": {
+          "errorClass": "TypeMismatchError",
+          "message": "Config key \"PORT\" is not a valid integer (got \"abc\")."
+        },
+        "go": {
+          "errorClass": "TypeMismatchError",
+          "message": "envpit: config key \"PORT\" is not a valid integer (got \"abc\")"
+        },
+        "java": {
+          "errorClass": "TypeMismatchException",
+          "message": "Config key \"PORT\" is not a valid integer (got \"abc\")."
+        }
+      }
+    },
+    {
+      "name": "background-refresh-failed-http-500",
+      "errorClassSemantic": null,
+      "trigger": "a background (non-first-load) refresh's underlying fetch fails with the SAME condition as non-2xx-response (HTTP 500) — logged as a warn line, never thrown, per INV-SDK-4",
+      "valueFreeCarveOut": false,
+      "kind": "log-line",
+      "logLevel": "warn",
+      "backgroundRefresh": { "condition": { "status": 500 } },
+      "messages": {
+        "node": {
+          "errorClass": null,
+          "message": "envpit: background config refresh failed (NetworkError): EnvPit returned HTTP 500 while fetching config from https://example.test/api/v1/config. — serving last known values"
+        },
+        "python": {
+          "errorClass": null,
+          "message": "envpit: background config refresh failed (NetworkError): EnvPit returned HTTP 500 while fetching config from https://example.test/api/v1/config. — serving last known values"
+        },
+        "go": {
+          "errorClass": null,
+          "message": "envpit: background config refresh failed: envpit: EnvPit returned HTTP 500 while fetching config from https://example.test/api/v1/config — serving last known values"
+        },
+        "java": {
+          "errorClass": null,
+          "message": "envpit: background config refresh failed (NetworkException): EnvPit returned HTTP 500 while fetching config from https://example.test/api/v1/config. — serving last known values"
+        }
+      }
+    },
+    {
+      "name": "go-or-family-type-mismatch-value-free",
+      "errorClassSemantic": null,
+      "trigger": "Go-only: a *Or-family default-returning getter (e.g. GetIntOr) hits a type mismatch — logs a warn line AND surfaces on Errors(ctx), value deliberately OMITTED per AC-SEC-SDK3-6 (unlike type-mismatch-integer's carve-out, this is NEW surface in .3 with no Node-parity excuse to echo the value)",
+      "valueFreeCarveOut": false,
+      "kind": "log-line",
+      "logLevel": "warn",
+      "languages": ["go"],
+      "messages": {
+        "go": {
+          "errorClass": null,
+          "message": "envpit: config key \"PORT\" is not a valid integer — returning the supplied default"
+        }
+      }
+    }
+  ]
+}

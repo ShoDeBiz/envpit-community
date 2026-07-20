@@ -1,0 +1,74 @@
+{
+  "description": "Malformed/oversized/deeply-nested JSON bodies and SSE lines every EnvPit SDK's parser must handle SAFELY — reject with a clear, catchable error (mapped to `NetworkError` or the SSE-transport's existing degraded/backoff path), never crash the host process, never hang, never grow memory unboundedly. Backfilled per Sentinel's `outputs/THREATMODEL-envpit-0t2z-3.md` F2 / AC-SEC-SDK3-2 (a malicious or compromised server, or a TLS-bypassed MITM, must not be able to exhaust client memory or crash the process). Ground truth for what's ALREADY safe vs. a documented, pre-existing gap: sdks/node/src/{transport,sse-parser}.ts and sdks/python/src/envpit/{transport,sse_parser}.py, both read in full and empirically verified (not assumed) against real JSON.parse/json.loads/fetchConfig/SseFrameParser behavior before any case below was written.\n\nSizes are given as target BYTE COUNTS (`payloadBytes`/`lineBytes`), not literal embedded giant strings — embedding literal multi-megabyte fixtures in this file would bloat the repo for no benefit. `payloadRecipe: \"json-object-single-key-K-padded-string\"` means: build `{\"K\": \"` + (`'v'` repeated until the total UTF-8 byte length of `json.dumps({\"K\": pad})` equals `payloadBytes`) + `\"}`  — i.e. exactly `test_json_caps.py`'s existing recipe, generalized. `lineRecipe: \"sse-config-changed-data-padded-no-terminator\"` means: `\"event: config-changed\\ndata: \" + ('x' repeated until the chunk's total UTF-8 byte length equals lineBytes)`, fed as ONE chunk with NO trailing `\\n` (the adversarial shape: an attacker who never terminates a line to force unbounded buffering).\n\nDepth-bomb cases (`kind: \"json-depth-bomb\"`) are DELIBERATELY specified as a SAFETY property, not a single required outcome: `expectedSafety: \"no-crash-no-hang-no-oom\"` is satisfied by EITHER a clean parse (Node's V8 JSON.parse is non-recursive and handles 200,000-deep nesting in milliseconds — verified empirically, not assumed) OR a clean rejection (Python's C-accelerated `json` module raises `RecursionError` around depth ~1000, caught and mapped to `NetworkError` — also verified). Both are compliant; what would NOT be compliant is an uncaught process crash, an unbounded hang, or unbounded memory growth. A future language whose parser IS naturally recursion-vulnerable (Sentinel's F2: Java's hand-rolled ~150-line parser) needs an EXPLICIT depth cap (Sentinel recommends 32, since the two shipped payload shapes — config snapshot, SSE push payload — are flat by contract) to land in the safe zone; that per-language cap number is Dave/Sara's to tune per language, not dictated by this shared file.",
+  "notes": [
+    "Two of these cases (`oversized-response-body-exceeds-cap`, `oversized-sse-line-without-terminator-is-capped`) are PRE-EXISTING, ALREADY-DOCUMENTED Node parity gaps (Sentinel THREATMODEL-envpit-0t2z-3.md F2, 'Node parity-gap register' items 2; AC-SEC-SDK3-2(a)/(b) apply to the three NEW languages, not retroactively to shipped Node — this bd does not change Node's src/). Verified empirically before writing this file: `fetchConfig` accepts a 6 MiB body today (no cap), and `SseFrameParser.push()` does not throw for a 200,000-byte unterminated line (buffer just grows, no throw, no hang, no crash in the moment — but genuinely unbounded over a sustained attack). Node's consuming test for these two cases documents this AS a GAP (CONFORMANCE.md's existing GAP-documented convention, e.g. INV-SDK-3), not a hard pass/fail assertion — it is a regression CANARY (accurately describes today's reality; must be updated, not silently deleted, the day Node adopts the same caps via bd:envpit-aw7l).",
+    "Python already implements BOTH caps (`DEFAULT_BODY_BYTE_CAP = 5 MiB` in transport.py, `DEFAULT_MAX_LINE_BYTES = 64 KiB` in sse_parser.py) — this is Python's own hardening, not a Node-parity copy (Node has neither). These two cases were previously covered ONLY by Python-side bespoke tests (`tests/test_json_caps.py`, pre-dating this file); this backfill promotes that coverage into the shared, language-agnostic format per `test-vectors/README.md` §3's rule ('add here first, touching every language'), superseding the bespoke duplicates (see the Python retrofit's own commit for which bespoke tests were removed vs. kept).",
+    "The malformed-JSON cases (unterminated string, invalid unicode escape, trailing garbage) and the depth-bomb case are NOT gaps — both Node and Python already handle every one of them safely today (verified empirically), so both languages' consuming tests assert a real, currently-passing, non-aspirational positive outcome.",
+    "OUT OF SCOPE for this file (found during verification, reported separately, NOT included here as a case): neither Node's `transport.ts` nor a hypothetical naive port validates that the config-fetch response body's TOP-LEVEL JSON value is actually an object (`{}`) — a server returning a bare JSON array/number/string/null is accepted as a 'successful load' by Node (verified: does not crash — JS's permissive bracket-property-access on non-object values returns `undefined`, degrading every getter to `MissingKeyError` instead of failing the load with a clear error; `null` specifically produces a confusing 'config not loaded yet — should be unreachable' message). Python's transport.py DOES validate this (`isinstance(parsed, dict)` check, rejects with `NetworkError`). This is a real shape-validation inconsistency, but it is NOT a crash/hang/OOM issue (Sentinel's AC-SEC-SDK3-2 scope), so it does not belong in THIS family as a build-gating case — flagged in the hand-off report as its own, separately-scoped follow-up (recommend a dedicated bd issue), not force-fit here."
+  ],
+  "cases": [
+    {
+      "name": "oversized-response-body-exceeds-cap",
+      "kind": "body-size-cap",
+      "recommendedCapBytes": 5242880,
+      "payloadBytes": 6291456,
+      "payloadRecipe": "json-object-single-key-K-padded-string",
+      "expectedSafety": "reject-before-buffering-entire-body",
+      "expectedErrorClass": "NetworkError",
+      "expectedMessageSubstring": "exceeded the maximum allowed size"
+    },
+    {
+      "name": "response-body-at-cap-boundary-is-accepted",
+      "kind": "body-size-cap",
+      "recommendedCapBytes": 5242880,
+      "payloadBytes": 5242860,
+      "payloadRecipe": "json-object-single-key-K-padded-string",
+      "expectedSafety": "accept"
+    },
+    {
+      "name": "oversized-sse-line-without-terminator-is-capped",
+      "kind": "sse-line-size-cap",
+      "recommendedCapBytes": 65536,
+      "lineBytes": 200000,
+      "lineRecipe": "sse-config-changed-data-padded-no-terminator",
+      "expectedSafety": "reject-drop-connection-reconnect-via-existing-backoff-path"
+    },
+    {
+      "name": "sse-line-under-the-cap-parses-normally",
+      "kind": "sse-line-size-cap",
+      "recommendedCapBytes": 65536,
+      "event": "config-changed",
+      "data": "{}",
+      "expectedSafety": "accept",
+      "expectedFrame": { "event": "config-changed", "data": "{}" }
+    },
+    {
+      "name": "json-depth-bomb-nested-arrays-is-memory-safe",
+      "kind": "json-depth-bomb",
+      "depth": 200000,
+      "pattern": "nested-arrays",
+      "expectedSafety": "no-crash-no-hang-no-oom"
+    },
+    {
+      "name": "unterminated-string-value-is-rejected-safely",
+      "kind": "malformed-json",
+      "input": "{\"K\": \"unterminated string value with no closing quote",
+      "expectedSafety": "reject-as-network-error",
+      "expectedErrorClass": "NetworkError"
+    },
+    {
+      "name": "invalid-unicode-escape-is-rejected-safely",
+      "kind": "malformed-json",
+      "input": "{\"K\": \"bad \\uZZZZ escape\"}",
+      "expectedSafety": "reject-as-network-error",
+      "expectedErrorClass": "NetworkError"
+    },
+    {
+      "name": "trailing-garbage-after-valid-json-is-rejected",
+      "kind": "malformed-json",
+      "input": "{\"K\":\"v\"} trailing garbage not part of the document",
+      "expectedSafety": "reject-as-network-error",
+      "expectedErrorClass": "NetworkError"
+    }
+  ]
+}
