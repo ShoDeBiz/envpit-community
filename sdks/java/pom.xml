@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  envpit-sdk (Java) — Phase 1 SDK, bd:envpit-0t2z.3 (last of the 3 new languages, follows
+  Node/Python/Go). Java 17, ZERO runtime dependencies — java.net.http.HttpClient + a hand-rolled
+  internal JSON parser (Sara SPEC-envpit-0t2z-3-1a-architecture.md §2.3, ADR-S3-02/ADR-S3-05).
+  JUnit 5 is a TEST-scope-only dependency (does not ship with the published artifact) — matches
+  Python's pytest / Node's vitest being dev-only; Go's stdlib `testing` needed no such dependency
+  at all, the one place Java's ecosystem forces a test-only exception to the zero-dep posture.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.envpit</groupId>
+  <artifactId>envpit-sdk</artifactId>
+  <version>0.1.0</version>
+  <packaging>jar</packaging>
+
+  <name>envpit-sdk</name>
+  <description>EnvPit configuration management SDK for Java — zero runtime dependencies.</description>
+  <url>https://github.com/ShoDeBiz/envpit-community</url>
+
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <junit.version>5.10.2</junit.version>
+  </properties>
+
+  <dependencies>
+    <!-- TEST-scope only — never shipped with the published artifact (mvn dependency:tree on the
+         compile/runtime scope must show zero entries; verified by security_gates_test.go's
+         analogue, ZeroRuntimeDependenciesTest). -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+        <configuration>
+          <release>17</release>
+          <compilerArgs>
+            <arg>-Xlint:all,-serial</arg>
+          </compilerArgs>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.2.5</version>
+        <configuration>
+          <!-- Some conformance/leak tests spin real background threads and sockets; keep them
+               serialized within this module (fine — the suite runs in a few seconds). -->
+          <parallel>none</parallel>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>
