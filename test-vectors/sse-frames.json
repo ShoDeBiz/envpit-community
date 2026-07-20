@@ -1,0 +1,53 @@
+{
+  "description": "SseFrameParser input -> output frames. `chunkMode: \"char\"` means feed `input` to the parser one Unicode code point at a time (worst-case chunk splitting a streamed HTTP body can do); `chunkMode: \"whole\"` means feed `input` as a single chunk. `expectedFrames` is the ordered list of frames the parser must yield across the whole input. Ground truth: sdks/node/src/sse-parser.ts.",
+  "cases": [
+    {
+      "name": "mid-field-split-worst-case-char-by-char-chunking",
+      "chunkMode": "char",
+      "input": "event: config-changed\ndata: {\"etag\":\"\\\"e1\\\"\"}\n\n",
+      "expectedFrames": [{ "event": "config-changed", "data": "{\"etag\":\"\\\"e1\\\"\"}" }]
+    },
+    {
+      "name": "comment-and-heartbeat-lines-and-stray-blanks-are-consumed-silently",
+      "chunkMode": "whole",
+      "input": ": heartbeat\n\n\n: another comment\n\nevent: config-changed\ndata: {}\n\n",
+      "expectedFrames": [{ "event": "config-changed", "data": "{}" }]
+    },
+    {
+      "name": "field-less-line-no-colon-treated-as-field-name-with-empty-value",
+      "chunkMode": "whole",
+      "input": "retry\nevent: config-changed\ndata: {}\n\n",
+      "expectedFrames": [{ "event": "config-changed", "data": "{}" }]
+    },
+    {
+      "name": "multiple-data-lines-joined-with-newline-in-order",
+      "chunkMode": "whole",
+      "input": "data: {\"etag\":\ndata: \"\\\"e1\\\"\"}\n\n",
+      "expectedFrames": [{ "event": "message", "data": "{\"etag\":\n\"\\\"e1\\\"\"}" }]
+    },
+    {
+      "name": "frame-with-no-data-field-dispatches-with-empty-data",
+      "chunkMode": "whole",
+      "input": "event: config-changed\n\n",
+      "expectedFrames": [{ "event": "config-changed", "data": "" }]
+    },
+    {
+      "name": "crlf-line-endings-are-normalized-same-as-lf",
+      "chunkMode": "whole",
+      "input": "event: config-changed\r\ndata: {}\r\n\r\n",
+      "expectedFrames": [{ "event": "config-changed", "data": "{}" }]
+    },
+    {
+      "name": "comment-only-stream-produces-no-frame",
+      "chunkMode": "whole",
+      "input": ": just a comment\n",
+      "expectedFrames": []
+    },
+    {
+      "name": "consecutive-blank-lines-with-no-fields-produce-no-frame",
+      "chunkMode": "whole",
+      "input": "\n\n\n",
+      "expectedFrames": []
+    }
+  ]
+}

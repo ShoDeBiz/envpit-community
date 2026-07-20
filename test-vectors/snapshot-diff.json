@@ -1,0 +1,14 @@
+{
+  "description": "Two successive resolved-config snapshots -> the sorted list of changed key NAMES (never values). `before`/`after` are `ConfigSnapshot` maps (`Record<string, string|null>`); a key absent from a map and a key present-with-`null` are equivalent (\"unset\"). Ground truth: sdks/node/src/client.ts (diffSnapshots), consumed by every `change` event.",
+  "cases": [
+    { "name": "key-added", "before": { "A": "1" }, "after": { "A": "1", "B": "2" }, "expectedChangedKeys": ["B"] },
+    { "name": "key-removed", "before": { "A": "1", "B": "2" }, "after": { "A": "1" }, "expectedChangedKeys": ["B"] },
+    { "name": "key-value-changed", "before": { "A": "1" }, "after": { "A": "2" }, "expectedChangedKeys": ["A"] },
+    { "name": "no-change-identical-maps", "before": { "A": "1", "B": "2" }, "after": { "A": "1", "B": "2" }, "expectedChangedKeys": [] },
+    { "name": "absent-key-and-null-valued-key-are-equivalent", "before": { "A": "1", "B": null }, "after": { "A": "1" }, "expectedChangedKeys": [] },
+    { "name": "new-key-materializes-as-null-is-not-a-change", "before": { "EXISTING": "v" }, "after": { "EXISTING": "v", "NEW_UNSET_KEY": null }, "expectedChangedKeys": [] },
+    { "name": "multiple-changes-are-sorted-alphabetically", "before": { "Z": "1", "A": "1" }, "after": { "Z": "2", "A": "2" }, "expectedChangedKeys": ["A", "Z"] },
+    { "name": "empty-to-empty-no-change", "before": {}, "after": {}, "expectedChangedKeys": [] },
+    { "name": "all-keys-removed", "before": { "A": "1", "B": "2" }, "after": {}, "expectedChangedKeys": ["A", "B"] }
+  ]
+}

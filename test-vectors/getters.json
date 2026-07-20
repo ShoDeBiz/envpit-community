@@ -1,0 +1,32 @@
+{
+  "description": "EnvpitClient typed-getter behavior: given a loaded `snapshot`, calling `kind` getter (`string`|`int`|`boolean`, mapping to `get`/`getInt`/`getBoolean`) for `key` with optional `default` produces either `{\"value\": ...}` or `{\"error\": \"MissingKeyError\"|\"TypeMismatchError\"}`. Ground truth: sdks/node/src/client.ts (INTEGER_PATTERN, TRUE_VALUES, FALSE_VALUES, readRaw's null-equals-absent rule).",
+  "cases": [
+    { "name": "string-happy-path", "snapshot": { "DATABASE_URL": "postgres://localhost/db" }, "kind": "string", "key": "DATABASE_URL", "expected": { "value": "postgres://localhost/db" } },
+    { "name": "string-missing-no-default-throws", "snapshot": {}, "kind": "string", "key": "MISSING", "expected": { "error": "MissingKeyError" } },
+    { "name": "string-missing-with-default-returns-default", "snapshot": {}, "kind": "string", "key": "MISSING", "default": "fallback", "expected": { "value": "fallback" } },
+    { "name": "string-null-value-treated-as-missing", "snapshot": { "UNSET_IN_THIS_ENV": null }, "kind": "string", "key": "UNSET_IN_THIS_ENV", "expected": { "error": "MissingKeyError" } },
+
+    { "name": "int-happy-path", "snapshot": { "PORT": "3333" }, "kind": "int", "key": "PORT", "expected": { "value": 3333 } },
+    { "name": "int-negative-value-parses", "snapshot": { "PORT": "-5" }, "kind": "int", "key": "PORT", "expected": { "value": -5 } },
+    { "name": "int-decimal-value-is-type-mismatch", "snapshot": { "PORT": "1.5" }, "kind": "int", "key": "PORT", "expected": { "error": "TypeMismatchError" } },
+    { "name": "int-non-numeric-value-is-type-mismatch", "snapshot": { "PORT": "not-a-number" }, "kind": "int", "key": "PORT", "expected": { "error": "TypeMismatchError" } },
+    { "name": "int-empty-string-is-type-mismatch", "snapshot": { "PORT": "" }, "kind": "int", "key": "PORT", "expected": { "error": "TypeMismatchError" } },
+    { "name": "int-whitespace-is-trimmed-before-parsing", "snapshot": { "PORT": "  42  " }, "kind": "int", "key": "PORT", "expected": { "value": 42 } },
+    { "name": "int-missing-no-default-throws", "snapshot": {}, "kind": "int", "key": "MISSING", "expected": { "error": "MissingKeyError" } },
+    { "name": "int-missing-with-default-returns-default", "snapshot": {}, "kind": "int", "key": "MISSING", "default": 42, "expected": { "value": 42 } },
+
+    { "name": "bool-true-literal", "snapshot": { "FEATURE_X": "true" }, "kind": "boolean", "key": "FEATURE_X", "expected": { "value": true } },
+    { "name": "bool-false-literal", "snapshot": { "DISABLED_FLAG": "false" }, "kind": "boolean", "key": "DISABLED_FLAG", "expected": { "value": false } },
+    { "name": "bool-1-is-true", "snapshot": { "FEATURE_X": "1" }, "kind": "boolean", "key": "FEATURE_X", "expected": { "value": true } },
+    { "name": "bool-0-is-false", "snapshot": { "FEATURE_X": "0" }, "kind": "boolean", "key": "FEATURE_X", "expected": { "value": false } },
+    { "name": "bool-yes-is-true", "snapshot": { "FEATURE_X": "yes" }, "kind": "boolean", "key": "FEATURE_X", "expected": { "value": true } },
+    { "name": "bool-no-is-false", "snapshot": { "FEATURE_X": "no" }, "kind": "boolean", "key": "FEATURE_X", "expected": { "value": false } },
+    { "name": "bool-on-is-true", "snapshot": { "FEATURE_X": "on" }, "kind": "boolean", "key": "FEATURE_X", "expected": { "value": true } },
+    { "name": "bool-off-is-false", "snapshot": { "FEATURE_X": "off" }, "kind": "boolean", "key": "FEATURE_X", "expected": { "value": false } },
+    { "name": "bool-case-insensitive-upper", "snapshot": { "FEATURE_X": "TRUE" }, "kind": "boolean", "key": "FEATURE_X", "expected": { "value": true } },
+    { "name": "bool-whitespace-is-trimmed", "snapshot": { "FEATURE_X": "  true  " }, "kind": "boolean", "key": "FEATURE_X", "expected": { "value": true } },
+    { "name": "bool-invalid-value-is-type-mismatch", "snapshot": { "FEATURE_X": "maybe" }, "kind": "boolean", "key": "FEATURE_X", "expected": { "error": "TypeMismatchError" } },
+    { "name": "bool-missing-no-default-throws", "snapshot": {}, "kind": "boolean", "key": "MISSING", "expected": { "error": "MissingKeyError" } },
+    { "name": "bool-missing-with-default-returns-default", "snapshot": {}, "kind": "boolean", "key": "MISSING", "default": true, "expected": { "value": true } }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "description": "SHA-256 consistent-hash rollout-bucketing determinism vectors. FORWARD PROVISION (bd:envpit-0t2z.3 Slice 0, per SPEC-envpit-0t2z-3-1a-architecture.md §6) — no shipped SDK language consumes this yet; Feature Flags SDK support ships under bd:envpit-0t2z.6. Reserved here now so every language's future implementation proves identical bucketing against the exact same ground truth from day one, instead of being ported from prose.",
+  "algorithm": {
+    "spec": "bucket = (first 4 bytes of SHA-256(UTF-8(salt + \":\" + key)), read as a BIG-ENDIAN UNSIGNED 32-bit integer) mod 10000",
+    "notes": [
+      "No normalization of `key` — no trim, no case-fold, no Unicode normalization; raw UTF-8 bytes as given.",
+      "The 32-bit read MUST be unsigned (the JVM signed-int trap called out by AC-SEC-F11b) — Java ports must use `& 0xFFFFFFFFL` or an equivalent unsigned read, not a plain `int`.",
+      "bucket is always an integer in [0, 9999] — never a float."
+    ]
+  },
+  "sourceOfTruth": "envpit (main repo) libs/shared/src/flag-evaluation-vectors.ts — FLAG_BUCKET_GOLDEN_VECTORS + GOLDEN_VECTOR_SALT, doc-comment-pinned independent of computeFlagBucket's own implementation (libs/shared/src/flag-evaluator.ts) so a bug in that function cannot make its own conformance test tautologically pass.",
+  "salt": "golden-vector-salt-16ch",
+  "cases": [
+    { "key": "user-1", "expectedBucket": 6487 },
+    { "key": "user-2", "expectedBucket": 3004 },
+    { "key": "user-3", "expectedBucket": 3169 },
+    { "key": "", "expectedBucket": 9463 },
+    { "key": "ключ-🔑", "expectedBucket": 4277 },
+    { "key": "user-with-very-long-identifier-string-1234567890", "expectedBucket": 1690 },
+    { "key": "brute-8528", "expectedBucket": 0 },
+    { "key": "brute-4882", "expectedBucket": 1 },
+    { "key": "brute-11816", "expectedBucket": 9999 }
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "description": "SSE `config-changed` (and other event-name) frames -> expected client behavior. `event`/`data` are the exact wire-content fields to send (as `event: {event}\\ndata: {data}\\n\\n`). `expectedBehavior` is `\"refetch\"` (a config refresh is triggered with `expectedEtag`) or `\"ignore\"` (frame produces no refetch, no crash, no change/error event). Ground truth: sdks/node/src/realtime-transport.ts (handleFrame/parseEtag) + sdks/node/src/client.ts (handlePushSignal).",
+  "cases": [
+    {
+      "name": "valid-payload-triggers-refetch",
+      "event": "config-changed",
+      "data": "{\"etag\":\"\\\"e1\\\"\",\"project_id\":\"p1\",\"environment_id\":\"e1\",\"occurred_at\":\"2026-01-01T00:00:00.000Z\"}",
+      "expectedBehavior": "refetch",
+      "expectedEtag": "\"e1\""
+    },
+    {
+      "name": "invalid-json-data-is-silently-ignored",
+      "event": "config-changed",
+      "data": "{not valid json!!",
+      "expectedBehavior": "ignore"
+    },
+    {
+      "name": "missing-etag-field-is-silently-ignored",
+      "event": "config-changed",
+      "data": "{\"project_id\":\"p1\",\"environment_id\":\"e1\",\"occurred_at\":\"2026-01-01T00:00:00.000Z\"}",
+      "expectedBehavior": "ignore"
+    },
+    {
+      "name": "etag-wrong-type-number-not-coerced-or-crashed-on",
+      "event": "config-changed",
+      "data": "{\"etag\": 12345}",
+      "expectedBehavior": "ignore"
+    },
+    {
+      "name": "extra-unexpected-fields-still-refetches-forward-compatible",
+      "event": "config-changed",
+      "data": "{\"etag\":\"\\\"e1\\\"\",\"project_id\":\"p1\",\"environment_id\":\"e1\",\"occurred_at\":\"2026-01-01T00:00:00.000Z\",\"future_field_the_sdk_has_never_seen\":{\"nested\":true,\"arr\":[1,2,3]},\"another_surprise\":null}",
+      "expectedBehavior": "refetch",
+      "expectedEtag": "\"e1\""
+    },
+    {
+      "name": "data-valid-json-but-null-not-an-object",
+      "event": "config-changed",
+      "data": "null",
+      "expectedBehavior": "ignore"
+    },
+    {
+      "name": "data-valid-json-but-array-not-an-object",
+      "event": "config-changed",
+      "data": "[1,2,3]",
+      "expectedBehavior": "ignore"
+    },
+    {
+      "name": "data-valid-json-but-bare-string-not-an-object",
+      "event": "config-changed",
+      "data": "\"just a bare string\"",
+      "expectedBehavior": "ignore"
+    },
+    {
+      "name": "data-valid-json-but-number-not-an-object",
+      "event": "config-changed",
+      "data": "42",
+      "expectedBehavior": "ignore"
+    },
+    {
+      "name": "data-valid-json-but-boolean-not-an-object",
+      "event": "config-changed",
+      "data": "true",
+      "expectedBehavior": "ignore"
+    },
+    {
+      "name": "unknown-future-event-name-is-ignored-not-misrouted",
+      "event": "flags-changed",
+      "data": "{\"etag\":\"\\\"e1\\\"\"}",
+      "expectedBehavior": "ignore"
+    }
+  ]
+}

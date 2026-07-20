@@ -13,9 +13,15 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EnvpitClient } from '../src/client.js';
-import { SseFrameParser } from '../src/sse-parser.js';
 import type { ChangeEvent, ConnectionEvent, Logger } from '../src/types.js';
 import { jsonResponse, routedFetch } from './test-utils.js';
+
+// bd:envpit-0t2z.3 Slice 0 retrofit: the "SseFrameParser — adversarial input" and "malformed
+// config-changed payload" describe blocks that used to live inline here now load from the
+// shared `test-vectors/sse-frames.json` / `test-vectors/push-payloads.json` — see
+// `test/vectors/sse-frames.vectors.test.ts` and `test/vectors/push-payloads.vectors.test.ts`.
+// Everything below (rapid-fire, listener-leak, generation-guard/race, degraded-mode) is
+// concurrency/lifecycle behavior, not vector-shaped data — it stays inline.
 
 afterEach(() => {
   vi.useRealTimers();
@@ -67,210 +73,6 @@ function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void; reject: 
   promise.catch(() => {});
   return { promise, resolve, reject };
 }
-
-// ---------------------------------------------------------------------------------------------
-// 1. SseFrameParser — malformed / adversarial wire input (unit-level, no client involved)
-// ---------------------------------------------------------------------------------------------
-describe('SseFrameParser — adversarial input', () => {
-  it('does not throw on a frame split across many tiny chunks, incl. mid-field splits', () => {
-    const parser = new SseFrameParser();
-    const full = 'event: config-changed\ndata: {"etag":"\\"e1\\""}\n\n';
-    const frames = [];
-    for (const ch of full) {
-      frames.push(...parser.push(ch)); // one character at a time — worst-case chunking
-    }
-    expect(frames).toHaveLength(1);
-    expect(frames[0]).toEqual({ event: 'config-changed', data: '{"etag":"\\"e1\\""}' });
-  });
-
-  it('ignores comment/heartbeat lines and stray blank lines without crashing or emitting spurious frames', () => {
-    const parser = new SseFrameParser();
-    const frames = parser.push(': heartbeat\n\n\n: another comment\n\nevent: config-changed\ndata: {}\n\n');
-    expect(frames).toHaveLength(1);
-    expect(frames[0]?.event).toBe('config-changed');
-  });
-
-  it('treats a field-less line (no colon) as a field name with empty value, not a crash', () => {
-    const parser = new SseFrameParser();
-    // `retry` with no colon at all is a malformed-but-real-world SSE line some proxies emit.
-    const frames = parser.push('retry\nevent: config-changed\ndata: {}\n\n');
-    expect(frames).toHaveLength(1);
-  });
-
-  it('joins multiple `data:` lines with \\n per the SSE multi-line-data spec, does not lose or reorder them', () => {
-    const parser = new SseFrameParser();
-    const frames = parser.push('data: {"etag":\ndata: "\\"e1\\""}\n\n');
-    expect(frames).toHaveLength(1);
-    expect(frames[0]?.data).toBe('{"etag":\n"\\"e1\\""}');
-  });
-
-  it('a frame with no `data:` field at all dispatches with data: "" (does not throw)', () => {
-    const parser = new SseFrameParser();
-    const frames = parser.push('event: config-changed\n\n');
-    expect(frames).toHaveLength(1);
-    expect(frames[0]?.data).toBe('');
-  });
-});
-
-// ---------------------------------------------------------------------------------------------
-// 2. Malformed `config-changed` payload end-to-end through the real client — must not crash,
-//    must not misbehave (spurious refetch storms, wrong etag applied, etc.)
-// ---------------------------------------------------------------------------------------------
-describe('EnvpitClient realtime — malformed config-changed payload (adversarial)', () => {
-  it('a config-changed frame with completely invalid JSON is silently ignored: no crash, no refetch, no change/error event', async () => {
-    const sse = sseResponse();
-    const logger = recordingLogger();
-    const changes: ChangeEvent[] = [];
-    const errors: Error[] = [];
-    const client = await EnvpitClient.load({
-      apiKey: 'epk_test',
-      pollIntervalMs: 60_000,
-      logger,
-      fetchImpl: routedFetch({
-        // Only ONE config response queued (the initial load). If the malformed frame triggers
-        // a spurious refetch, routedFetch throws "no route configured" and this test fails loudly.
-        config: [() => jsonResponse({ K: 'v0' })],
-        events: [() => sse.response],
-      }),
-    });
-    client.on('change', (e) => changes.push(e));
-    client.on('error', (e) => errors.push(e));
-    await flushMicrotasks();
-
-    expect(() => sse.push('event: config-changed\ndata: {not valid json!!\n\n')).not.toThrow();
-    await flushMicrotasks();
-
-    expect(changes).toHaveLength(0);
-    expect(errors).toHaveLength(0);
-    expect(client.get('K')).toBe('v0'); // untouched
-    expect(logger.lines.filter((l) => l.level === 'error')).toHaveLength(0);
-
-    client.close();
-  });
-
-  it('a config-changed frame missing the `etag` field entirely is silently ignored (no crash, no refetch)', async () => {
-    const sse = sseResponse();
-    const client = await EnvpitClient.load({
-      apiKey: 'epk_test',
-      pollIntervalMs: 60_000,
-      fetchImpl: routedFetch({
-        config: [() => jsonResponse({ K: 'v0' })],
-        events: [() => sse.response],
-      }),
-    });
-    await flushMicrotasks();
-    const changes: ChangeEvent[] = [];
-    client.on('change', (e) => changes.push(e));
-
-    // Real payload shape per Sara §5.3 minus `etag` — a server bug or a future schema drift.
-    expect(() =>
-      sse.push(
-        `event: config-changed\ndata: ${JSON.stringify({ project_id: 'p1', environment_id: 'e1', occurred_at: new Date().toISOString() })}\n\n`,
-      ),
-    ).not.toThrow();
-    await flushMicrotasks();
-
-    expect(changes).toHaveLength(0);
-    client.close();
-  });
-
-  it('a config-changed frame with `etag` as the wrong type (number, not string) is ignored, not coerced/crashed on', async () => {
-    const sse = sseResponse();
-    const client = await EnvpitClient.load({
-      apiKey: 'epk_test',
-      pollIntervalMs: 60_000,
-      fetchImpl: routedFetch({
-        config: [() => jsonResponse({ K: 'v0' })],
-        events: [() => sse.response],
-      }),
-    });
-    await flushMicrotasks();
-    const changes: ChangeEvent[] = [];
-    client.on('change', (e) => changes.push(e));
-
-    expect(() => sse.push('event: config-changed\ndata: {"etag": 12345}\n\n')).not.toThrow();
-    await flushMicrotasks();
-
-    expect(changes).toHaveLength(0);
-    client.close();
-  });
-
-  it('a config-changed frame with a bunch of unexpected EXTRA fields still works normally (forward-compatible)', async () => {
-    const sse = sseResponse();
-    const client = await EnvpitClient.load({
-      apiKey: 'epk_test',
-      pollIntervalMs: 60_000,
-      fetchImpl: routedFetch({
-        config: [() => jsonResponse({ K: 'v0' }), () => jsonResponse({ K: 'v1' })],
-        events: [() => sse.response],
-      }),
-    });
-    await flushMicrotasks();
-    const changes: ChangeEvent[] = [];
-    client.on('change', (e) => changes.push(e));
-
-    sse.push(
-      `event: config-changed\ndata: ${JSON.stringify({
-        etag: '"e1"',
-        project_id: 'p1',
-        environment_id: 'e1',
-        occurred_at: new Date().toISOString(),
-        future_field_the_sdk_has_never_seen: { nested: true, arr: [1, 2, 3] },
-        another_surprise: null,
-      })}\n\n`,
-    );
-    await flushMicrotasks();
-
-    expect(changes).toHaveLength(1);
-    expect(changes[0]?.changedKeys).toEqual(['K']);
-    client.close();
-  });
-
-  it.each(['null', '[1,2,3]', '"just a bare string"', '42', 'true'])(
-    'a config-changed frame whose `data:` is valid JSON but NOT an object (%s) does not crash on property access',
-    async (data) => {
-      const sse = sseResponse();
-      const client = await EnvpitClient.load({
-        apiKey: 'epk_test',
-        pollIntervalMs: 60_000,
-        fetchImpl: routedFetch({
-          config: [() => jsonResponse({ K: 'v0' })],
-          events: [() => sse.response],
-        }),
-      });
-      await flushMicrotasks();
-      const changes: ChangeEvent[] = [];
-      client.on('change', (e) => changes.push(e));
-
-      expect(() => sse.push(`event: config-changed\ndata: ${data}\n\n`)).not.toThrow();
-      await flushMicrotasks();
-
-      expect(changes).toHaveLength(0); // no crash, no spurious refetch
-      client.close();
-    },
-  );
-
-  it('an unknown/future `event:` name (e.g. flags-changed piggyback) is ignored, not misrouted as config-changed', async () => {
-    const sse = sseResponse();
-    const client = await EnvpitClient.load({
-      apiKey: 'epk_test',
-      pollIntervalMs: 60_000,
-      fetchImpl: routedFetch({
-        config: [() => jsonResponse({ K: 'v0' })],
-        events: [() => sse.response],
-      }),
-    });
-    await flushMicrotasks();
-    const changes: ChangeEvent[] = [];
-    client.on('change', (e) => changes.push(e));
-
-    sse.push('event: flags-changed\ndata: {"etag":"\\"e1\\""}\n\n');
-    await flushMicrotasks();
-
-    expect(changes).toHaveLength(0); // no refetch triggered by an event this SDK doesn't handle
-    client.close();
-  });
-});
 
 // ---------------------------------------------------------------------------------------------
 // 3. Rapid-fire events — many changes in quick succession

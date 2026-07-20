@@ -1,0 +1,20 @@
+{
+  "suiteVersion": "1.0.0",
+  "description": "Language-agnostic behavioral fixture suite for every EnvPit SDK. Frozen per suiteVersion — any change touches all shipped SDKs in one PR (bd:envpit-0t2z.3 Slice 0).",
+  "families": [
+    "sse-frames",
+    "push-payloads",
+    "getters",
+    "snapshot-diff",
+    "error-mapping",
+    "hashing"
+  ],
+  "sourceOfTruth": {
+    "sse-frames": "envpit-community/sdks/node/src/sse-parser.ts (SseFrameParser) — first extracted from sdks/node/test/realtime-adversarial.test.ts:74-116",
+    "push-payloads": "envpit-community/sdks/node/src/realtime-transport.ts (handleFrame/parseEtag) — first extracted from sdks/node/test/realtime-adversarial.test.ts:119-273",
+    "getters": "envpit-community/sdks/node/src/client.ts (get/getString/getInt/getBoolean) — first extracted from sdks/node/test/client.test.ts",
+    "snapshot-diff": "envpit-community/sdks/node/src/client.ts (diffSnapshots) — first extracted from sdks/node/test/realtime-adversarial.test.ts:540-613",
+    "error-mapping": "envpit-community/sdks/node/src/transport.ts (fetchConfig) — first extracted from sdks/node/test/client.test.ts",
+    "hashing": "envpit/libs/shared/src/flag-evaluation-vectors.ts (FLAG_BUCKET_GOLDEN_VECTORS, GOLDEN_VECTOR_SALT) + flag-evaluator.ts (computeFlagBucket doc comment) — main envpit repo, canonical ground truth for bd:envpit-0t2z.6 rollout bucketing. Forward provision: no shipped SDK language consumes this yet (Feature Flags SDK work belongs to bd:envpit-0t2z.6), reserved here per SPEC-envpit-0t2z-3-1a-architecture.md §6 so the format anticipates it and every language proves identical bucketing against the SAME ground truth from day one."
+  }
+}

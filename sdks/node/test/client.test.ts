@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EnvpitClient } from '../src/client.js';
-import { AuthenticationError, MissingKeyError, NetworkError, TypeMismatchError } from '../src/errors.js';
-import { fakeFetch, jsonResponse, networkFailure, problemResponse, routedFetch } from './test-utils.js';
+import { NetworkError } from '../src/errors.js';
+import { fakeFetch, jsonResponse, networkFailure, routedFetch } from './test-utils.js';
+
+// bd:envpit-0t2z.3 Slice 0 retrofit: the typed-getter happy-path, MissingKeyError,
+// TypeMismatchError, AuthenticationError, and "NetworkError on first load" describe blocks that
+// used to live inline here now load from the shared `test-vectors/getters.json` /
+// `test-vectors/error-mapping.json` — see `test/vectors/getters.vectors.test.ts` and
+// `test/vectors/error-mapping.vectors.test.ts`. apiKey resolution and the stale-while-revalidate
+// lifecycle test stay here — neither is pure input/output vector data.
 
 afterEach(() => {
   vi.useRealTimers();
@@ -29,129 +36,6 @@ describe('EnvpitClient.load() — apiKey resolution', () => {
     } finally {
       delete process.env['ENVPIT_API_KEY'];
     }
-  });
-});
-
-describe('EnvpitClient.load() + typed getters (happy path)', () => {
-  it('fetches the config once and serves getString/getInt/getBoolean/get synchronously', async () => {
-    const client = await EnvpitClient.load({
-      apiKey: 'epk_test',
-      pollIntervalMs: 0,
-      fetchImpl: fakeFetch([
-        () =>
-          jsonResponse({
-            DATABASE_URL: 'postgres://localhost/db',
-            PORT: '3333',
-            FEATURE_X: 'true',
-            DISABLED_FLAG: 'false',
-          }),
-      ]),
-    });
-
-    expect(client.get('DATABASE_URL')).toBe('postgres://localhost/db');
-    expect(client.getString('DATABASE_URL')).toBe('postgres://localhost/db');
-    expect(client.getInt('PORT')).toBe(3333);
-    expect(client.getBoolean('FEATURE_X')).toBe(true);
-    expect(client.getBoolean('DISABLED_FLAG')).toBe(false);
-  });
-});
-
-describe('MissingKeyError', () => {
-  it('throws MissingKeyError for an absent key with no default', async () => {
-    const client = await EnvpitClient.load({
-      apiKey: 'epk_test',
-      pollIntervalMs: 0,
-      fetchImpl: fakeFetch([() => jsonResponse({ EXISTING: 'yes' })]),
-    });
-
-    expect(() => client.get('MISSING')).toThrow(MissingKeyError);
-    expect(() => client.getInt('MISSING')).toThrow(MissingKeyError);
-    expect(() => client.getBoolean('MISSING')).toThrow(MissingKeyError);
-  });
-
-  it('treats a null-valued key as missing', async () => {
-    const client = await EnvpitClient.load({
-      apiKey: 'epk_test',
-      pollIntervalMs: 0,
-      fetchImpl: fakeFetch([() => jsonResponse({ UNSET_IN_THIS_ENV: null })]),
-    });
-    expect(() => client.get('UNSET_IN_THIS_ENV')).toThrow(MissingKeyError);
-  });
-
-  it('returns the default instead of throwing when a default value is provided', async () => {
-    const client = await EnvpitClient.load({
-      apiKey: 'epk_test',
-      pollIntervalMs: 0,
-      fetchImpl: fakeFetch([() => jsonResponse({})]),
-    });
-
-    expect(client.get('MISSING', 'fallback')).toBe('fallback');
-    expect(client.getInt('MISSING', 42)).toBe(42);
-    expect(client.getBoolean('MISSING', true)).toBe(true);
-  });
-});
-
-describe('TypeMismatchError', () => {
-  it('throws TypeMismatchError when getInt cannot parse the value', async () => {
-    const client = await EnvpitClient.load({
-      apiKey: 'epk_test',
-      pollIntervalMs: 0,
-      fetchImpl: fakeFetch([() => jsonResponse({ PORT: 'not-a-number' })]),
-    });
-    expect(() => client.getInt('PORT')).toThrow(TypeMismatchError);
-  });
-
-  it('throws TypeMismatchError when getBoolean cannot parse the value', async () => {
-    const client = await EnvpitClient.load({
-      apiKey: 'epk_test',
-      pollIntervalMs: 0,
-      fetchImpl: fakeFetch([() => jsonResponse({ FEATURE_X: 'maybe' })]),
-    });
-    expect(() => client.getBoolean('FEATURE_X')).toThrow(TypeMismatchError);
-  });
-});
-
-describe('AuthenticationError', () => {
-  it('rejects load() with AuthenticationError on a 401 response', async () => {
-    await expect(
-      EnvpitClient.load({
-        apiKey: 'epk_bad',
-        pollIntervalMs: 0,
-        fetchImpl: fakeFetch([() => problemResponse(401)]),
-      }),
-    ).rejects.toThrow(AuthenticationError);
-  });
-
-  it('rejects load() with AuthenticationError on a 403 response (e.g. IP not allowlisted)', async () => {
-    await expect(
-      EnvpitClient.load({
-        apiKey: 'epk_bad',
-        pollIntervalMs: 0,
-        fetchImpl: fakeFetch([() => problemResponse(403)]),
-      }),
-    ).rejects.toThrow(AuthenticationError);
-  });
-});
-
-describe('NetworkError on first load (fatal — no cache to fall back to)', () => {
-  it('rejects load() with NetworkError when the first fetch fails outright', async () => {
-    await expect(
-      EnvpitClient.load({
-        apiKey: 'epk_test',
-        pollIntervalMs: 0,
-        fetchImpl: fakeFetch([networkFailure()]),
-      }),
-    ).rejects.toThrow(NetworkError);
-  });
-
-  it('rejects load() with NetworkError for a non-auth 5xx on first load', async () => {
-    await expect(
-      EnvpitClient.load({
-        apiKey: 'epk_test',
-        pollIntervalMs: 0,
-        fetchImpl: fakeFetch([() => problemResponse(503)]),
-      }),
-    ).rejects.toThrow(NetworkError);
   });
 });
 
