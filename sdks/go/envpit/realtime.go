@@ -101,7 +101,18 @@ func (t *realtimeTransport) GoString() string { return t.String() }
 
 // run drives the connect/pump/reconnect loop for the transport's entire lifetime, until ctx is
 // done (the client's own lifecycle context — cancelled only by Client.Close()).
+//
+// bd:envpit-tkvz: the degraded-mode warn timer (scheduleWarnTimer) is normally stopped by
+// onSuccess() when the channel recovers, but that's only ONE of run()'s exit paths. Close()
+// drives the ctx-cancellation exit paths below (:107-109 pre-fix, the post-connectOnce check, and
+// the select's <-ctx.Done() case) — neither of which called stopWarnTimerLocked(), so a pending
+// warn AfterFunc scheduled while degraded kept firing minutes after Close() returned (a spurious
+// log line, and it kept the whole Client graph, including the config snapshot, reachable/un-GC'd
+// until it fired). This defer covers every exit from run() — success, ctx-cancel, or the loop
+// simply never starting because ctx was already done — not just the one path that happened to
+// call it explicitly. Idempotent (stopWarnTimerLocked no-ops if no timer is pending).
 func (t *realtimeTransport) run(ctx context.Context) {
+	defer t.stopWarnTimer()
 	for ctx.Err() == nil {
 		t.connectOnce(ctx)
 		if ctx.Err() != nil {
@@ -302,6 +313,14 @@ func (t *realtimeTransport) stopWarnTimerLocked() {
 		t.warnTimer.Stop()
 		t.warnTimer = nil
 	}
+}
+
+// stopWarnTimer is stopWarnTimerLocked's lock-acquiring wrapper, for callers (e.g. run's defer,
+// bd:envpit-tkvz) that don't already hold t.mu.
+func (t *realtimeTransport) stopWarnTimer() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.stopWarnTimerLocked()
 }
 
 func (t *realtimeTransport) scheduleDegradedRetry() {
