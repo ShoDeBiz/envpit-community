@@ -121,6 +121,8 @@ class EnvpitClient:
         self._poll_thread: threading.Thread | None = None
         self._poll_stop = threading.Event()
         self._realtime: RealtimeTransport | None = None
+        self._closed = False
+        self._fork_hook_registered = False
 
     def __repr__(self) -> str:  # AC-SEC-SDK3-1: value-free/key-free default representation
         keys = len(self._snapshot) if self._snapshot is not None else 0
@@ -163,26 +165,89 @@ class EnvpitClient:
     def _bootstrap(self) -> None:
         self._refresh(is_first_load=True)
         if self._poll_interval_s > 0:
-            self._poll_thread = threading.Thread(
-                target=self._poll_loop, name="envpit-poll", daemon=True
-            )
-            self._poll_thread.start()
+            self._start_background_threads()
+            self._register_fork_hook()
 
-            realtime_kwargs: dict[str, Any] = {}
-            if self._sse_opener is not None:
-                realtime_kwargs["opener"] = self._sse_opener
-            self._realtime = RealtimeTransport(
-                host=self._host,
-                api_key=self._api_key,
-                poll_interval_s=self._poll_interval_s,
-                callbacks=RealtimeCallbacks(
-                    on_change_signal=self._handle_push_signal,
-                    on_mode_change=self._handle_connection_mode_change,
-                    on_log=self._log,
-                ),
-                **realtime_kwargs,
-            )
-            self._realtime.start()
+    def _start_background_threads(self) -> None:
+        self._poll_thread = threading.Thread(
+            target=self._poll_loop, name="envpit-poll", daemon=True
+        )
+        self._poll_thread.start()
+
+        realtime_kwargs: dict[str, Any] = {}
+        if self._sse_opener is not None:
+            realtime_kwargs["opener"] = self._sse_opener
+        self._realtime = RealtimeTransport(
+            host=self._host,
+            api_key=self._api_key,
+            poll_interval_s=self._poll_interval_s,
+            callbacks=RealtimeCallbacks(
+                on_change_signal=self._handle_push_signal,
+                on_mode_change=self._handle_connection_mode_change,
+                on_log=self._log,
+            ),
+            **realtime_kwargs,
+        )
+        self._realtime.start()
+
+    def _register_fork_hook(self) -> None:
+        # bd:envpit-p261: only the calling thread survives `os.fork()` (POSIX semantics) — a
+        # client `load()`ed before a `gunicorn --preload` / uWSGI-prefork fork() ends up with
+        # ZERO background threads in the child, with NO error signal whatsoever
+        # (`cache_info.last_error` stays `None`, `refresh_mode` looks unchanged — a forked
+        # worker's client is silently frozen at fork-time state forever). Self-healing fix
+        # (Quinn's preferred option): `os.register_at_fork(after_in_child=...)` re-establishes
+        # the poll+realtime threads in the child automatically, no user action required.
+        # POSIX-only (`os.fork()`/`os.register_at_fork` don't exist on Windows) and only
+        # registered once per instance — `os.register_at_fork` has no unregister API, so a
+        # `self._closed` guard inside the handler is what makes a closed client's hook a
+        # permanent no-op rather than resurrecting it on some unrelated later fork.
+        if self._fork_hook_registered or not hasattr(os, "register_at_fork"):
+            return
+        self._fork_hook_registered = True
+        os.register_at_fork(after_in_child=self._handle_fork_in_child)
+
+    def _handle_fork_in_child(self) -> None:
+        """Runs in the child immediately after `os.fork()`. Only the calling thread survives a
+        fork, so every `Lock`/`Event` this instance owns may be inherited in whatever state it
+        happened to be in at the instant of fork — a lock held by a thread that no longer
+        exists in the child would deadlock forever if reused as-is (the classic fork+threads
+        hazard; the same pattern CPython's own `logging` module works around). None of that
+        state is worth trying to preserve/repair (whatever critical section was in flight died
+        with its thread), so every lock is simply discarded for a fresh, unlocked one before
+        anything touches this client again — see `_reset_locks_after_fork()`.
+
+        The stale `Thread`/`RealtimeTransport` objects from the parent are NOT reused (dropped
+        outright): CPython's own atfork machinery marks inherited `Thread` objects as stopped,
+        so they're inert in the child regardless — brand-new ones are simply started."""
+        if self._closed:
+            return  # a closed client's threads must never be resurrected by an unrelated fork
+        self._reset_locks_after_fork()
+        self._poll_thread = None
+        self._realtime = None
+        self._saw_first_realtime_connect = False  # this process hasn't (re)connected yet
+        self._log(
+            "warn",
+            "envpit: process forked — re-establishing background config refresh in the "
+            "child process (see bd:envpit-p261)",
+        )
+        self._start_background_threads()
+        # Self-heal promptly rather than waiting up to a full `poll_interval` for the restarted
+        # poll thread's first tick: kick one immediate background refresh on its own thread so
+        # the atfork handler itself never blocks on network I/O.
+        threading.Thread(
+            target=self._safe_background_refresh,
+            args=("poll",),
+            name="envpit-fork-recover",
+            daemon=True,
+        ).start()
+
+    def _reset_locks_after_fork(self) -> None:
+        self._state_lock = threading.Lock()
+        self._poll_stop = threading.Event()
+        self._change_emitter.reset_lock_after_fork()
+        self._connection_emitter.reset_lock_after_fork()
+        self._error_emitter.reset_lock_after_fork()
 
     def _poll_loop(self) -> None:
         while not self._poll_stop.wait(self._poll_interval_s):
@@ -203,7 +268,11 @@ class EnvpitClient:
 
     def close(self) -> None:
         """Stops the background poll thread AND the realtime (SSE) connection. Idempotent. The
-        last snapshot remains readable."""
+        last snapshot remains readable. Also permanently disarms this client's `os.fork()`
+        self-heal hook (bd:envpit-p261) — `os.register_at_fork` has no unregister API, so
+        `_closed` is what stops a closed client's threads from being resurrected by some
+        unrelated later fork elsewhere in the process."""
+        self._closed = True
         self._poll_stop.set()
         if self._poll_thread is not None and self._poll_thread is not threading.current_thread():
             self._poll_thread.join(timeout=5.0)

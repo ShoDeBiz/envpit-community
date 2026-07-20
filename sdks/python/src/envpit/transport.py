@@ -13,6 +13,7 @@ through a fake `fetchImpl` rather than re-implementing the mapping in test code.
 
 from __future__ import annotations
 
+import http.client
 import json
 import urllib.error
 import urllib.request
@@ -64,6 +65,23 @@ def fetch_config(
         raise NetworkError(
             f"Could not reach EnvPit at {url} ({_describe_failure(exc)}). Check your "
             "network/proxy and https://status.envpit.com."
+        ) from exc
+    except (http.client.HTTPException, ConnectionError) as exc:
+        # bd:envpit-4dbm: a mid-connection TCP reset (pod killed mid-request, an LB
+        # idle-timeout race, a NAT/firewall RST) makes `urlopen()` raise
+        # `http.client.RemoteDisconnected` — which is NOT a `urllib.error.URLError` subclass
+        # (it's `ConnectionResetError` + `http.client.BadStatusLine`), so none of the except
+        # clauses above catch it; it would otherwise escape as a raw stdlib exception, breaking
+        # the documented "load() raises EnvpitError" contract. The safe general shape (not an
+        # enumerated allow-list of specific classes) is: anything `http.client` can raise for a
+        # real TCP-level failure (`http.client.HTTPException` — base of `RemoteDisconnected`/
+        # `BadStatusLine`/`IncompleteRead`) OR a bare `ConnectionError` (base of
+        # `ConnectionResetError`/`BrokenPipeError`/`ConnectionAbortedError`, raised directly by
+        # a socket read that `urlopen()` doesn't wrap into `URLError`) maps to `NetworkError`,
+        # same as every other transport failure.
+        raise NetworkError(
+            f"Could not reach EnvPit at {url} (the connection was reset before a response was "
+            "received). Check your network/proxy and https://status.envpit.com."
         ) from exc
 
     snapshot = _parse_json_body(body, url)

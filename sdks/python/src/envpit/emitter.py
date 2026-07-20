@@ -85,6 +85,15 @@ class SafeEmitter(Generic[T]):
 
         return unsubscribe
 
+    def reset_lock_after_fork(self) -> None:
+        """`os.fork()` atfork hook helper (bd:envpit-p261): only the calling thread survives a
+        fork, so `self._lock` could be inherited by a forked child in a locked state if some
+        other thread happened to be mid-`on()`/`emit()` at the exact instant of fork — a lock
+        held by a now-nonexistent thread would deadlock forever if reused as-is. Discarded for
+        a fresh, always-unlocked one; registered listener callables are preserved as-is (plain
+        data with no thread ownership, safe to keep)."""
+        self._lock = threading.Lock()
+
     def emit(self, payload: T) -> None:
         with self._lock:
             listeners = list(self._listeners.values())

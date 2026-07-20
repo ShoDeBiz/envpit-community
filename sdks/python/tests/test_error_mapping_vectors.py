@@ -6,6 +6,7 @@ taxonomy — 404/429/5xx all collapse into `NetworkError`, NOT a special type (A
 
 from __future__ import annotations
 
+import http.client
 import urllib.error
 
 import pytest
@@ -47,6 +48,16 @@ def _urlopen_for(condition: dict):
 
         def _urlopen(request, timeout):  # noqa: ANN001, ANN202
             return FakeHttpResponse(b"{not valid json!!", headers={})
+
+        return _urlopen
+    if failure == "connection-reset":
+        # bd:envpit-4dbm: a mid-connection TCP reset with zero response bytes. Not a
+        # `urllib.error.URLError` — the specific gap this vector case exists to conformance-check
+        # going forward.
+        def _urlopen(request, timeout):  # noqa: ANN001, ANN202
+            raise http.client.RemoteDisconnected(
+                "Remote end closed connection without response"
+            )
 
         return _urlopen
 
