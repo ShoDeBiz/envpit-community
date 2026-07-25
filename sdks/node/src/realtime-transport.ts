@@ -1,11 +1,28 @@
 import { SseFrameParser, type SseFrame } from './sse-parser.js';
+import type { ConfigScope } from './transport.js';
 import type { ConnectionMode, ConnectionReason, Logger } from './types.js';
 
 /** `GET {host}/api/v1/config/events` — the key-scope-inferred alias
  *  (`ApiKeyScopedConfigEventsController` in the main repo), mirroring `transport.ts`'s
- *  `CONFIG_PATH`. Auth via `X-Api-Key`; project+environment inferred server-side from the key.
+ *  `CONFIG_PATH_ALIAS`. Auth via `X-Api-Key`; project+environment inferred server-side from the
+ *  key. Used only when no `scope` override is set — see `buildEventsPath` below.
  *  bd:envpit-a9d §5.3. */
-const CONFIG_EVENTS_PATH = '/api/v1/config/events';
+const CONFIG_EVENTS_PATH_ALIAS = '/api/v1/config/events';
+
+/** Explicit-scope events path builder — mirrors `transport.ts`'s `buildConfigPath` (bd:envpit-ed3h
+ *  loop iter-2, Chris High #2). When a scope override is set, the SSE channel MUST target the
+ *  matching `GET {host}/api/v1/projects/:project/environments/:environment/config/events` path
+ *  (`ApiKeyConfigEventsController_streamEvents`, `contract/openapi.json` — verified present).
+ *  Previously this transport always hit `CONFIG_EVENTS_PATH_ALIAS` regardless of scope: for a
+ *  scope-override client whose key is a project-wildcard key (the override's own primary use
+ *  case), that alias deterministically returns a permanent 400 ("not scoped to a single
+ *  environment"), which `onFailure()` misread as a transient blip — degrading to polling AND
+ *  retrying the doomed connection forever instead of hitting the scoped path, which has no such
+ *  400 case. */
+function buildEventsPath(scope: ConfigScope | undefined): string {
+  if (!scope) return CONFIG_EVENTS_PATH_ALIAS;
+  return `/api/v1/projects/${encodeURIComponent(scope.project)}/environments/${encodeURIComponent(scope.environment)}/config/events`;
+}
 
 /** The SSE `event:` name for a real config change (`libs/shared/src/config-events.dto.ts`,
  *  main repo — `CONFIG_CHANGED_SSE_EVENT_NAME`). Hardcoded here rather than imported: this SDK
@@ -69,6 +86,11 @@ export interface RealtimeTransportParams {
   /** Only used to word the "falling back to polling every {n}s" diagnostic copy — this
    *  transport does not itself poll. */
   pollIntervalMs: number;
+  /** Explicit project/environment scope override (bd:envpit-ed3h loop iter-2, Chris High #2) —
+   *  mirrors `FetchConfigParams.scope` in `transport.ts`. `undefined` (default) connects to the
+   *  key-scope-inferred alias; when set, the SSE connection targets the matching scoped events
+   *  path instead — see `buildEventsPath`. */
+  scope?: ConfigScope;
   callbacks: RealtimeTransportCallbacks;
 }
 
@@ -137,7 +159,7 @@ export class RealtimeTransport {
 
     let response: Response;
     try {
-      response = await this.params.fetchImpl(`${this.params.host}${CONFIG_EVENTS_PATH}`, {
+      response = await this.params.fetchImpl(`${this.params.host}${buildEventsPath(this.params.scope)}`, {
         method: 'GET',
         headers: { 'X-Api-Key': this.params.apiKey, Accept: 'text/event-stream' },
         signal: this.abortController.signal,

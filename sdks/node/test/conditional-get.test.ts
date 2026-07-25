@@ -7,6 +7,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EnvpitClient } from '../src/client.js';
+import { NetworkError } from '../src/errors.js';
 import type { ChangeEvent } from '../src/types.js';
 import { routedFetch } from './test-utils.js';
 
@@ -84,5 +85,21 @@ describe('EnvpitClient — conditional GET on background poll refresh (bd:envpit
     expect(client.cacheInfo.fetchedAt).not.toEqual(firstFetchedAt);
 
     client.stop();
+  });
+
+  it('bd:envpit-ed3h loop iter-2, Chris High #1 — an unsolicited 304 on the VERY FIRST load ' +
+    '(no If-None-Match was sent — etag is null, there is nothing cached to revalidate against) ' +
+    'rejects load() with NetworkError instead of silently resolving into a broken null-snapshot ' +
+    'client', async () => {
+    const client = EnvpitClient.load({
+      apiKey: 'epk_test',
+      pollIntervalMs: 0,
+      fetchImpl: routedFetch({
+        config: [() => new Response(null, { status: 304 })],
+      }),
+    });
+
+    await expect(client).rejects.toThrow(NetworkError);
+    await expect(client).rejects.toThrow(/unexpected 304/i);
   });
 });

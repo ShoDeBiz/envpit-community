@@ -7,9 +7,13 @@
  * precedent the constructor already uses for a missing apiKey — this is an options-shape bug,
  * not a runtime EnvpitError condition).
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EnvpitClient } from '../src/client.js';
 import { jsonResponse } from './test-utils.js';
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 const PROJECT_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const ENV_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
@@ -90,4 +94,39 @@ describe('EnvpitClient.load({ project, environment }) — explicit scope overrid
     await expect(EnvpitClient.load({ apiKey: 'epk_test', pollIntervalMs: 0, project: 'x', fetchImpl })).rejects.toThrow();
     expect(called).toBe(false);
   });
+
+  it(
+    'bd:envpit-ed3h loop iter-2, Chris High #2 — a scope-override client\'s realtime (SSE) ' +
+      'channel connects to the SCOPED events path, not the unscoped alias (which returns a ' +
+      'permanent 400 for the override\'s own project-wildcard-key use case)',
+    async () => {
+      let eventsUrl: string | undefined;
+      const fetchImpl = (async (input: unknown) => {
+        const url = String(input);
+        if (url.endsWith('/config/events')) {
+          eventsUrl = url;
+          // A body-less 200 makes `RealtimeTransport` take the harmless `onUnsupported()` path
+          // and stop retrying — we only care about which URL the connection attempt used.
+          return new Response(null, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+        }
+        return jsonResponse({ K: 'v' });
+      }) as unknown as typeof fetch;
+
+      const client = await EnvpitClient.load({
+        apiKey: 'epk_test',
+        pollIntervalMs: 1000,
+        project: PROJECT_ID,
+        environment: ENV_ID,
+        fetchImpl,
+      });
+
+      // The realtime connect is fire-and-forget from `bootstrap()`; let it settle.
+      for (let i = 0; i < 5; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+
+      expect(eventsUrl).toBe(`https://envpit.com/api/v1/projects/${PROJECT_ID}/environments/${ENV_ID}/config/events`);
+      client.close();
+    },
+  );
 });

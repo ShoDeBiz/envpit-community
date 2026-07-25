@@ -1,5 +1,5 @@
 import { SafeEmitter } from './emitter.js';
-import { EnvpitError, MissingKeyError, TypeMismatchError } from './errors.js';
+import { EnvpitError, MissingKeyError, NetworkError, TypeMismatchError } from './errors.js';
 import { RealtimeTransport } from './realtime-transport.js';
 import { fetchConfig, type ConfigScope } from './transport.js';
 import type {
@@ -150,6 +150,11 @@ export class EnvpitClient {
         apiKey: this.apiKey,
         fetchImpl: this.fetchImpl,
         pollIntervalMs: this.pollIntervalMs,
+        // bd:envpit-ed3h loop iter-2, Chris High #2: the SSE channel must target the SAME scope
+        // as the poll channel (`this.scope`, already threaded into `fetchConfig` above) — an
+        // unscoped alias connection from a scope-override client hits a path that returns a
+        // permanent 400 for the override's own primary use case (a project-wildcard key).
+        scope: this.scope,
         callbacks: {
           onChangeSignal: (pushedEtag) => this.handlePushSignal(pushedEtag),
           onModeChange: (mode, reason, since) => this.handleConnectionModeChange(mode, reason, since),
@@ -324,6 +329,23 @@ export class EnvpitClient {
       if (myGeneration !== this.refreshGeneration) return;
 
       if (result.notModified) {
+        // Protocol violation guard (bd:envpit-ed3h loop iter-2, Chris High #1): a 304 can only
+        // be a valid revalidation when we already hold a snapshot to reuse. On the VERY FIRST
+        // load `this.etag` is null, so `ifNoneMatch` is never sent (correct — nothing to
+        // revalidate against yet) — a 304 arriving anyway means a misbehaving server, proxy, or
+        // CDN returned it unconditionally. Silently "succeeding" here would leave
+        // `this.snapshot` at `null` while `load()` still resolves — violating `readRaw()`'s
+        // class invariant that every `get*()` after a resolved `load()` is safe, and making
+        // that guard's "should be unreachable" comment false. Treat it as fatal instead,
+        // matching the existing first-load-throws precedent below (`catch`'s
+        // `isFirstLoad || this.snapshot === null` propagation path).
+        if (this.snapshot === null) {
+          throw new NetworkError(
+            'EnvPit returned an unexpected 304 Not Modified on the first config fetch, with no ' +
+              'previously cached config to reuse (no `If-None-Match` was sent — there was nothing ' +
+              'yet to revalidate against). This indicates a misbehaving server, proxy, or CDN.',
+          );
+        }
         // 304 (bd:envpit-ed3h Part 1): our own `ifNoneMatch` matched the server's current
         // fingerprint — there is no new snapshot to parse or apply. Reuse whatever is already
         // cached as-is; this IS a successful refresh (freshness advances, `lastError` clears),
