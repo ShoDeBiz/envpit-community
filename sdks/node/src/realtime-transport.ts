@@ -45,8 +45,20 @@ export interface RealtimeTransportCallbacks {
   /** A `config-changed` push arrived; `etag` is its fingerprint. The caller decides whether a
    *  refetch is actually needed (e.g. skip if it already holds this etag). */
   onChangeSignal(etag: string): void;
-  /** `mode` just transitioned (never fired per-attempt — only on an actual state change). */
+  /** `mode` just transitioned (never fired per-attempt — only on an actual state change). Governs
+   *  ONLY the `connection` event / `refreshMode` bookkeeping concern — see `onRealtimeConnected`
+   *  for the separate self-healing-refetch concern, which fires on a strictly wider set of
+   *  connects (bd:envpit-wvll — the two must NOT share one gate). */
   onModeChange(mode: ConnectionMode, reason: ConnectionReason, since: Date): void;
+  /** Fires on EVERY successful realtime (re)connect — including a quiet server-rotation
+   *  reconnect where `mode` never actually left `'realtime'` and `onModeChange` therefore does
+   *  NOT fire (AC-U6). This is the hook the client uses to drive the self-healing catch-up
+   *  refetch (`outputs/SPEC-envpit-a9d-1a-architecture.md` §5.2(a): "SDK refetches on every
+   *  (re)connect"), deliberately decoupled from `onModeChange` so a quiet rotation still
+   *  triggers it (bd:envpit-wvll regression fix — previously coupled to the same gate as
+   *  `onModeChange`, so the refetch was silently skipped whenever the `connection` event
+   *  correctly stayed silent). */
+  onRealtimeConnected(since: Date): void;
   onLog(level: 'debug' | 'info' | 'warn', message: string): void;
 }
 
@@ -224,6 +236,10 @@ export class RealtimeTransport {
     if (modeChanged) {
       this.params.callbacks.onModeChange('realtime', 'connected', since);
     }
+    // Unconditional — every successful (re)connect, not just ones where `mode` transitioned
+    // (bd:envpit-wvll). This is what lets a quiet server-rotation reconnect still drive the
+    // client's self-healing catch-up refetch even though `modeChanged` above is `false` for it.
+    this.params.callbacks.onRealtimeConnected(since);
   }
 
   private onFailure(): void {

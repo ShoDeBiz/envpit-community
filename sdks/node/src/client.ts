@@ -120,6 +120,7 @@ export class EnvpitClient {
         callbacks: {
           onChangeSignal: (pushedEtag) => this.handlePushSignal(pushedEtag),
           onModeChange: (mode, reason, since) => this.handleConnectionModeChange(mode, reason, since),
+          onRealtimeConnected: (since) => this.handleRealtimeConnected(since),
           onLog: (level, message) => this.logger?.[level]?.(message),
         },
       });
@@ -134,21 +135,29 @@ export class EnvpitClient {
     void this.refresh({ isFirstLoad: false, trigger: 'push' });
   }
 
+  /** Owns ONLY the `connection`-event / `refreshMode` bookkeeping concern — fires exclusively
+   *  on an actual mode transition (`RealtimeTransport.onModeChange`'s own contract). Deliberately
+   *  does NOT drive the self-healing refetch — see `handleRealtimeConnected` below, and
+   *  bd:envpit-wvll for why the two were split. */
   private handleConnectionModeChange(mode: ConnectionMode, reason: ConnectionReason, since: Date): void {
     this.refreshMode = mode;
     this.realtimeSince = mode === 'realtime' ? since : null;
     this.emitter.emit('connection', { mode, since, reason });
+  }
 
-    // Self-healing catch-up: refetch whenever the channel (re)connects, in case a change was
-    // missed while it was down (Sara §5.2: "SDK refetches on every (re)connect"). Skipped on
-    // the very first realtime connect right after `load()` — that data is already fresh, and
-    // firing it there would just be a wasted duplicate of the bootstrap fetch.
-    if (mode === 'realtime') {
-      if (this.sawFirstRealtimeConnect) {
-        void this.refresh({ isFirstLoad: false, trigger: 'reconnect' });
-      }
-      this.sawFirstRealtimeConnect = true;
+  /** Owns ONLY the self-healing catch-up refetch concern (Sara §5.2: "SDK refetches on every
+   *  (re)connect"). Fires on EVERY successful realtime (re)connect — including a quiet
+   *  server-rotation reconnect where `mode` never actually left `'realtime'` and
+   *  `handleConnectionModeChange` above therefore never runs for it (AC-U6: that case stays
+   *  quiet — no log, no `connection` event, mode stays `'realtime'` — but the refetch must
+   *  still happen; bd:envpit-wvll regression fix). Skipped on the very first realtime connect
+   *  right after `load()` — that data is already fresh, and firing it there would just be a
+   *  wasted duplicate of the bootstrap fetch. */
+  private handleRealtimeConnected(_since: Date): void {
+    if (this.sawFirstRealtimeConnect) {
+      void this.refresh({ isFirstLoad: false, trigger: 'reconnect' });
     }
+    this.sawFirstRealtimeConnect = true;
   }
 
   /** Stops the background poll timer AND the realtime (SSE) connection. Idempotent. The last

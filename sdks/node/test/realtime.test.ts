@@ -288,6 +288,51 @@ describe('EnvpitClient realtime — routine server rotation is quiet (AC-U6)', (
 
     client.close();
   });
+
+  it('a quiet server-rotation reconnect STILL fires the self-healing catch-up refetch, even though it stays quiet otherwise (regression: bd:envpit-wvll)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const first = sseResponse();
+    const second = sseResponse();
+    const logger = recordingLogger();
+    const connectionEvents: ConnectionEvent[] = [];
+    const changes: ChangeEvent[] = [];
+
+    const client = await EnvpitClient.load({
+      apiKey: 'epk_test',
+      pollIntervalMs: 60_000,
+      logger,
+      fetchImpl: routedFetch({
+        // Two config responses: the initial `load()` fetch, then the catch-up refetch this
+        // quiet reconnect must trigger — with a DIFFERENT value so a `change` is observable.
+        config: [() => jsonResponse({ K: 'v1' }), () => jsonResponse({ K: 'v2' })],
+        events: [() => first.response, () => second.response],
+      }),
+    });
+    client.on('connection', (e) => connectionEvents.push(e));
+    client.on('change', (e) => changes.push(e));
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.cacheInfo.refreshMode).toBe('realtime');
+    logger.lines.length = 0; // discard the initial "connected" debug line
+
+    first.push(reconnectFrame()); // server announces a routine rotation
+    first.close(); // ...then closes the stream, as the server does
+    await vi.advanceTimersByTimeAsync(1000); // the quiet quick-retry window
+
+    // AC-U6 preserved: still quiet — no mode flip, no `connection` event, no info/warn log.
+    expect(client.cacheInfo.refreshMode).toBe('realtime');
+    expect(connectionEvents).toHaveLength(0);
+    expect(logger.lines.filter((l) => l.level === 'info' || l.level === 'warn')).toHaveLength(0);
+
+    // bd:envpit-wvll: SPEC-envpit-a9d-1a-architecture.md §5.2(a) — "SDK refetches on every
+    // (re)connect" — the catch-up refetch must still fire on THIS reconnect despite it being
+    // the quiet-rotation path, which shares no `connection`-event gate with it.
+    expect(changes).toHaveLength(1);
+    expect(changes[0]?.trigger).toBe('reconnect');
+    expect(changes[0]?.changedKeys).toEqual(['K']);
+
+    client.close();
+  });
 });
 
 describe('EnvpitClient realtime — listeners can never crash the host (AC-U7)', () => {
