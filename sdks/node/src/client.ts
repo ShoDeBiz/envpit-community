@@ -239,7 +239,7 @@ export class EnvpitClient {
     const raw = this.readRaw(key);
     if (raw !== undefined) return raw;
     if (defaultValue !== undefined) return defaultValue;
-    throw new MissingKeyError(key);
+    throw this.missingKeyError(key);
   }
 
   /** Alias of `get()` — explicit typed-getter naming to match the other 3 getters. */
@@ -247,12 +247,20 @@ export class EnvpitClient {
     return this.get(key, defaultValue);
   }
 
+  /** Non-throwing counterpart to `get()` (bd:envpit-ed3h Part 3,
+   *  `outputs/SPEC-envpit-0t2z-1b-ux.md` §A1's `getOptional` escape hatch) — `undefined` for a
+   *  key that's absent or `null`, never a `MissingKeyError`. Prefer this when a missing key is
+   *  an expected, handled case rather than a fail-loud misconfiguration. */
+  getOptional(key: string): string | undefined {
+    return this.readRaw(key);
+  }
+
   /** Parses the value as a base-10 integer. Throws `TypeMismatchError` if it isn't one. */
   getInt(key: string, defaultValue?: number): number {
     const raw = this.readRaw(key);
     if (raw === undefined) {
       if (defaultValue !== undefined) return defaultValue;
-      throw new MissingKeyError(key);
+      throw this.missingKeyError(key);
     }
     const trimmed = raw.trim();
     if (!INTEGER_PATTERN.test(trimmed)) {
@@ -267,12 +275,20 @@ export class EnvpitClient {
     const raw = this.readRaw(key);
     if (raw === undefined) {
       if (defaultValue !== undefined) return defaultValue;
-      throw new MissingKeyError(key);
+      throw this.missingKeyError(key);
     }
     const normalized = raw.trim().toLowerCase();
     if (TRUE_VALUES.has(normalized)) return true;
     if (FALSE_VALUES.has(normalized)) return false;
     throw new TypeMismatchError(key, 'boolean', raw);
+  }
+
+  /** Builds a `MissingKeyError` with a did-you-mean suggestion computed against the currently
+   *  loaded snapshot's own key set (bd:envpit-ed3h Part 3) — shared by `get()`/`getInt()`/
+   *  `getBoolean()` so the suggestion behaves identically no matter which getter missed. */
+  private missingKeyError(key: string): MissingKeyError {
+    const knownKeys = this.snapshot === null ? [] : Object.keys(this.snapshot);
+    return new MissingKeyError(key, suggestNearestKey(key, knownKeys));
   }
 
   private readRaw(key: string): string | undefined {
@@ -373,4 +389,41 @@ function diffSnapshots(previous: ConfigSnapshot, next: ConfigSnapshot): string[]
     if (before !== after) changed.push(key);
   }
   return changed.sort();
+}
+
+// bd:envpit-ed3h Part 3 — did-you-mean. A tiny inline Levenshtein edit distance, per the DX
+// spec's own framing ("the SDK holds the full key list in memory — suggesting the nearest key
+// (edit distance <= 2) is nearly free", outputs/SPEC-envpit-0t2z-1b-ux.md §A1). Deliberately NOT
+// a dependency — the constraint on this bd is "no new heavy deps".
+const MAX_SUGGESTION_DISTANCE = 2;
+
+function levenshteinDistance(a: string, b: string): number {
+  let prevRow: number[] = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i += 1) {
+    const currRow: number[] = [i];
+    for (let j = 1; j <= b.length; j += 1) {
+      const substitutionCost = a[i - 1] === b[j - 1] ? 0 : 1;
+      const deletion = (prevRow[j] ?? 0) + 1;
+      const insertion = (currRow[j - 1] ?? 0) + 1;
+      const substitution = (prevRow[j - 1] ?? 0) + substitutionCost;
+      currRow.push(Math.min(deletion, insertion, substitution));
+    }
+    prevRow = currRow;
+  }
+  return prevRow[b.length] ?? 0;
+}
+
+/** Nearest key in `knownKeys` within `MAX_SUGGESTION_DISTANCE` edits of `missingKey`, or
+ *  `undefined` if none is close enough (or `knownKeys` is empty) — feeds `MissingKeyError`'s
+ *  did-you-mean copy. Deterministic tie-break: smallest distance first, then alphabetical. */
+function suggestNearestKey(missingKey: string, knownKeys: readonly string[]): string | undefined {
+  let best: { key: string; distance: number } | undefined;
+  for (const candidate of knownKeys) {
+    const distance = levenshteinDistance(missingKey, candidate);
+    if (distance > MAX_SUGGESTION_DISTANCE) continue;
+    if (!best || distance < best.distance || (distance === best.distance && candidate < best.key)) {
+      best = { key: candidate, distance };
+    }
+  }
+  return best?.key;
 }
