@@ -260,11 +260,12 @@ export class EnvpitClient {
     // a strictly higher generation number.
     const myGeneration = ++this.refreshGeneration;
     try {
-      const { snapshot, etag } = await fetchConfig({
+      const result = await fetchConfig({
         host: this.host,
         apiKey: this.apiKey,
         fetchImpl: this.fetchImpl,
         timeoutMs: this.timeoutMs,
+        ifNoneMatch: this.etag,
       });
 
       // A newer refresh() was issued while this one's fetch was in flight — this response is
@@ -272,6 +273,17 @@ export class EnvpitClient {
       // state, and do not fire a `change` event for a result that's about to be thrown away.
       if (myGeneration !== this.refreshGeneration) return;
 
+      if (result.notModified) {
+        // 304 (bd:envpit-ed3h Part 1): our own `ifNoneMatch` matched the server's current
+        // fingerprint — there is no new snapshot to parse or apply. Reuse whatever is already
+        // cached as-is; this IS a successful refresh (freshness advances, `lastError` clears),
+        // it just has nothing new to deliver, so no `change` event fires.
+        this.fetchedAt = new Date();
+        this.lastError = null;
+        return;
+      }
+
+      const { snapshot, etag } = result;
       const previousSnapshot = this.snapshot;
       this.snapshot = snapshot;
       this.fetchedAt = new Date();

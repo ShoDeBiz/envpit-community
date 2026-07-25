@@ -1,32 +1,61 @@
 import { AuthenticationError, NetworkError } from './errors.js';
 import type { ConfigSnapshot } from './types.js';
 
+/** Explicit project+environment scope override (bd:envpit-ed3h Part 2). When set, `fetchConfig`
+ *  targets the DISTINCT `GET {host}/api/v1/projects/:project/environments/:environment/config`
+ *  path (`ApiKeyConfigResolveController_resolve`, `contract/openapi.json`) instead of the
+ *  key-scope-inferred alias below. Auth is unchanged — both paths use the same `ApiKey`
+ *  (`X-Api-Key`) security scheme in the contract. */
+export interface ConfigScope {
+  project: string;
+  environment: string;
+}
+
 /** The one real HTTP call this SDK makes (Phase 1 scope — no bootstrap/handshake endpoint).
- *  `GET {host}/api/v1/config` — the key-scope-inferred alias (`ApiKeyScopedConfigResolveController`
- *  in the main repo): auth via `X-Api-Key`, project+environment are inferred server-side from
- *  the key itself, so the SDK never needs to know its own project/environment id. */
+ *  Default (no `scope`): `GET {host}/api/v1/config` — the key-scope-inferred alias
+ *  (`ApiKeyScopedConfigResolveController` in the main repo): auth via `X-Api-Key`, project+
+ *  environment are inferred server-side from the key itself. With `scope`: the explicit
+ *  `GET {host}/api/v1/projects/:project/environments/:environment/config` path — see
+ *  `ConfigScope`. */
 export interface FetchConfigParams {
   host: string;
   apiKey: string;
   fetchImpl: typeof fetch;
   timeoutMs: number;
+  /** Explicit project/environment override — see `ConfigScope`. `undefined` (default) uses the
+   *  key-scope-inferred alias path. */
+  scope?: ConfigScope;
+  /** The `ETag` of the snapshot this caller already holds, if any (bd:envpit-ed3h Part 1) —
+   *  sent as `If-None-Match` (`contract/openapi.json`: both the alias and the explicit-scope
+   *  path document this request header and a `304` response). `undefined`/`null` sends no
+   *  conditional header at all — the correct behavior on the very first load, where there is
+   *  nothing yet to revalidate against. */
+  ifNoneMatch?: string | null;
 }
 
-const CONFIG_PATH = '/api/v1/config';
+const CONFIG_PATH_ALIAS = '/api/v1/config';
 
-/** `fetchConfig`'s result — the resolved snapshot plus the `ETag` response header (bd:envpit-a9d
- *  §4.1: a strong hash of version metadata only, never values), if the server sent one. Feeds
- *  `CacheInfo.etag` and the SSE push payload's dedup check (`EnvpitClient`'s `handlePushSignal`) —
- *  this SDK does not (yet) send `If-None-Match` itself; conditional-GET client support is a
- *  tracked follow-up, out of this slice's scope (subscribe/callback API only). */
-export interface FetchConfigResult {
-  snapshot: ConfigSnapshot;
-  etag: string | null;
+function buildConfigPath(scope: ConfigScope | undefined): string {
+  if (!scope) return CONFIG_PATH_ALIAS;
+  return `/api/v1/projects/${encodeURIComponent(scope.project)}/environments/${encodeURIComponent(scope.environment)}/config`;
 }
 
-export async function fetchConfig({ host, apiKey, fetchImpl, timeoutMs }: FetchConfigParams): Promise<FetchConfigResult> {
-  const url = `${host}${CONFIG_PATH}`;
-  const response = await performRequest(url, apiKey, fetchImpl, timeoutMs);
+/** `fetchConfig`'s result. A `304 Not Modified` (bd:envpit-ed3h Part 1 — the caller's
+ *  `ifNoneMatch` matched the server's current fingerprint) is a DISTINCT outcome from a normal
+ *  fetch: there is no snapshot to parse or transfer, and the caller must reuse whatever it
+ *  already has (`contract/openapi.json` `304` response on `GET …/config`: "nothing changed, no
+ *  body, no decrypt, no KMS unwrap"). */
+export type FetchConfigResult =
+  | { notModified: true }
+  | { notModified: false; snapshot: ConfigSnapshot; etag: string | null };
+
+export async function fetchConfig({ host, apiKey, fetchImpl, timeoutMs, scope, ifNoneMatch }: FetchConfigParams): Promise<FetchConfigResult> {
+  const url = `${host}${buildConfigPath(scope)}`;
+  const response = await performRequest(url, apiKey, fetchImpl, timeoutMs, ifNoneMatch);
+
+  if (response.status === 304) {
+    return { notModified: true };
+  }
 
   if (response.status === 401 || response.status === 403) {
     throw new AuthenticationError(
@@ -40,14 +69,22 @@ export async function fetchConfig({ host, apiKey, fetchImpl, timeoutMs }: FetchC
   }
 
   const snapshot = await parseJsonBody(response, url);
-  return { snapshot, etag: response.headers.get('etag') };
+  return { notModified: false, snapshot, etag: response.headers.get('etag') };
 }
 
-async function performRequest(url: string, apiKey: string, fetchImpl: typeof fetch, timeoutMs: number): Promise<Response> {
+async function performRequest(
+  url: string,
+  apiKey: string,
+  fetchImpl: typeof fetch,
+  timeoutMs: number,
+  ifNoneMatch: string | null | undefined,
+): Promise<Response> {
   try {
+    const headers: Record<string, string> = { 'X-Api-Key': apiKey };
+    if (ifNoneMatch) headers['If-None-Match'] = ifNoneMatch;
     return await fetchImpl(url, {
       method: 'GET',
-      headers: { 'X-Api-Key': apiKey },
+      headers,
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (cause) {

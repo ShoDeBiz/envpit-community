@@ -75,6 +75,7 @@ describe('Adversarial JSON/body/SSE vectors — test-vectors/adversarial-payload
       // would fail against Node's real src today, per this bd's explicit stop condition). The
       // day Node adopts AC-SEC-SDK3-2(a)'s cap, THIS assertion must flip to `.rejects.toThrow`.
       const result = await fetchConfig({ host: TEST_HOST, apiKey: 'epk_test', fetchImpl, timeoutMs: 5000 });
+      if (result.notModified) throw new Error('expected a 200 snapshot, got 304 (bd:envpit-ed3h narrowing)');
       expect(result.snapshot['K']).toHaveLength(c.payloadBytes! - Buffer.byteLength(JSON.stringify({ K: '' }), 'utf8'));
     });
 
@@ -85,6 +86,7 @@ describe('Adversarial JSON/body/SSE vectors — test-vectors/adversarial-payload
         new Response(body, { status: 200, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch;
 
       const result = await fetchConfig({ host: TEST_HOST, apiKey: 'epk_test', fetchImpl, timeoutMs: 5000 });
+      if (result.notModified) throw new Error('expected a 200 snapshot, got 304 (bd:envpit-ed3h narrowing)');
       expect(result.snapshot['K']).toBeDefined();
     });
   });
@@ -120,6 +122,7 @@ describe('Adversarial JSON/body/SSE vectors — test-vectors/adversarial-payload
       // satisfied either way) — Node's V8 JSON.parse handles this depth cleanly (verified),
       // so this positive assertion is Node's own real, current, safe behavior.
       const result = await fetchConfig({ host: TEST_HOST, apiKey: 'epk_test', fetchImpl, timeoutMs: 5000 });
+      if (result.notModified) throw new Error('expected a 200 snapshot, got 304 (bd:envpit-ed3h narrowing)');
       expect(Array.isArray(result.snapshot)).toBe(true);
     });
   });
