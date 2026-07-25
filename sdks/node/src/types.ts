@@ -47,6 +47,18 @@ export interface EnvpitClientOptions {
    *  level/copy table). Never required — everything it would log is also available
    *  pull-style via `cacheInfo` and push-style via `on('connection', ...)`/`on('error', ...)`. */
   logger?: Logger;
+  /** Explicit project/environment scope override (bd:envpit-ed3h Part 2). Bypasses the
+   *  key-scope-inferred alias (`GET /v1/config`) and targets
+   *  `GET /v1/projects/:project/environments/:environment/config` instead
+   *  (`contract/openapi.json` `ApiKeyConfigResolveController_resolve`) — the escape hatch for a
+   *  single API key scoped to more than one project/environment (a project-wildcard key), where
+   *  the alias otherwise returns a 400 (`outputs/SPEC-envpit-0t2z-1b-ux.md` §A3's
+   *  `ENVPIT_KEY_NOT_ENV_PINNED`). Must be given TOGETHER with `environment` below (or both
+   *  omitted — the default); each must be the project/environment's UUID (matches the
+   *  contract's `projectId`/`environmentId` path params, both `format: "uuid"`). */
+  project?: string;
+  /** Paired with `project` above — see there. */
+  environment?: string;
 }
 
 /** Point-in-time view of the SDK's in-memory cache — lets a caller inspect how fresh the

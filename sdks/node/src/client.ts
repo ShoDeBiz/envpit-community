@@ -1,7 +1,7 @@
 import { SafeEmitter } from './emitter.js';
 import { EnvpitError, MissingKeyError, TypeMismatchError } from './errors.js';
 import { RealtimeTransport } from './realtime-transport.js';
-import { fetchConfig } from './transport.js';
+import { fetchConfig, type ConfigScope } from './transport.js';
 import type {
   CacheInfo,
   ChangeTrigger,
@@ -20,6 +20,37 @@ const DEFAULT_TIMEOUT_MS = 5_000;
 const TRUE_VALUES = new Set(['true', '1', 'yes', 'on']);
 const FALSE_VALUES = new Set(['false', '0', 'no', 'off']);
 const INTEGER_PATTERN = /^-?\d+$/;
+// `contract/openapi.json`: ApiKeyConfigResolveController_resolve's `projectId`/`environmentId`
+// path params are both `"format": "uuid"` — version-agnostic (accepts any RFC 4122 layout, not
+// just v4), matching what the app repo actually issues (Postgres `gen_random_uuid()`, v4).
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Validates the explicit project/environment scope override (bd:envpit-ed3h Part 2). Both must
+ *  be given together (the server path needs both segments) or neither (default: the
+ *  key-scope-inferred alias). Throws a plain, synchronous `Error` — the SAME precedent the
+ *  constructor already uses for a missing `apiKey` a few lines below: an options-shape mistake
+ *  is a caller-code bug, not a runtime `EnvpitError` condition (that hierarchy models
+ *  server/config-read failures, not local input validation). */
+function resolveScopeOverride(project: string | undefined, environment: string | undefined): ConfigScope | undefined {
+  if (project === undefined && environment === undefined) return undefined;
+  if (project === undefined || environment === undefined) {
+    throw new Error(
+      'EnvPit: `project` and `environment` must both be provided together, or both omitted ' +
+        '(the default: the key-scope-inferred alias). Pass { project, environment } to `EnvpitClient.load(...)`.',
+    );
+  }
+  if (project.trim().length === 0 || environment.trim().length === 0) {
+    throw new Error('EnvPit: `project` and `environment` must be non-empty strings.');
+  }
+  if (!UUID_PATTERN.test(project) || !UUID_PATTERN.test(environment)) {
+    throw new Error(
+      'EnvPit: `project` and `environment` must be UUIDs (contract/openapi.json: ' +
+        `ApiKeyConfigResolveController_resolve's projectId/environmentId are format:"uuid"). ` +
+        `Got { project: ${JSON.stringify(project)}, environment: ${JSON.stringify(environment)} }.`,
+    );
+  }
+  return { project, environment };
+}
 
 /**
  * `const envpit = await EnvpitClient.load({ apiKey?, host?, ... });` — the Node/TS core client
@@ -52,6 +83,7 @@ export class EnvpitClient {
   private readonly fetchImpl: typeof fetch;
   private readonly logger: Logger | undefined;
   private readonly emitter: SafeEmitter<EnvpitClientEvents>;
+  private readonly scope: ConfigScope | undefined;
 
   private snapshot: ConfigSnapshot | null = null;
   private fetchedAt: Date | null = null;
@@ -79,6 +111,7 @@ export class EnvpitClient {
       );
     }
     this.apiKey = apiKey;
+    this.scope = resolveScopeOverride(options.project, options.environment);
     this.host = (options.host ?? DEFAULT_HOST).replace(/\/+$/, '');
     this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -265,6 +298,7 @@ export class EnvpitClient {
         apiKey: this.apiKey,
         fetchImpl: this.fetchImpl,
         timeoutMs: this.timeoutMs,
+        scope: this.scope,
         ifNoneMatch: this.etag,
       });
 
