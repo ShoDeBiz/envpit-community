@@ -1,4 +1,4 @@
-import type { ConfigSnapshot } from '../src/types.js';
+import type { ConfigValues } from '../src/types.js';
 
 /** Builds a fake `fetch` for injection into `EnvPitOptions.fetchImpl` — no real network I/O
  *  in unit tests (per bd:envpit-0t2z.2's DoD: "mock HTTP layer, ไม่ต้องต่อ EnvPit จริงก็ได้").
@@ -58,8 +58,15 @@ export function routedFetch(routes: {
   return fn;
 }
 
-export function jsonResponse(body: ConfigSnapshot, status = 200): Response {
-  return new Response(JSON.stringify(body), {
+/** Builds a config-resolve 200 response in the current `{ values, secretKeys }` wire envelope
+ *  (bd:envpit-durd, AC-SEC-E11) from a bare VALUES map — the overwhelming majority of call
+ *  sites in this suite only care about values, not which keys are secret, so `secretKeys`
+ *  defaults to `[]`. Pass it explicitly for tests that specifically exercise secret-flagging
+ *  (see `test/vectors/resolve-body.vectors.test.ts` / `env-merge.vectors.test.ts`, which
+ *  construct the envelope directly instead, and `merge-into-process-env.test.ts`, which uses
+ *  the `secretKeys` param here). */
+export function jsonResponse(values: ConfigValues, status = 200, secretKeys: readonly string[] = []): Response {
+  return new Response(JSON.stringify({ values, secretKeys }), {
     status,
     headers: { 'content-type': 'application/json' },
   });

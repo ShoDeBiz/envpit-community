@@ -11,14 +11,14 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { EnvpitClient } from '../../src/client.js';
-import type { ChangeEvent, ConfigSnapshot } from '../../src/types.js';
+import type { ChangeEvent, ConfigValues } from '../../src/types.js';
 import { jsonResponse, routedFetch } from '../test-utils.js';
 import { loadVectors } from '../vector-loader.js';
 
 interface SnapshotDiffVectorCase {
   name: string;
-  before: ConfigSnapshot;
-  after: ConfigSnapshot;
+  before: ConfigValues;
+  after: ConfigValues;
   expectedChangedKeys: string[];
 }
 interface SnapshotDiffVectors {

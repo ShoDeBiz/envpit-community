@@ -8,14 +8,14 @@
 import { describe, expect, it } from 'vitest';
 import { EnvpitClient } from '../../src/client.js';
 import { MissingKeyError, TypeMismatchError } from '../../src/errors.js';
-import type { ConfigSnapshot } from '../../src/types.js';
+import type { ConfigValues } from '../../src/types.js';
 import { jsonResponse, fakeFetch } from '../test-utils.js';
 import { loadVectors } from '../vector-loader.js';
 
 type GetterKind = 'string' | 'int' | 'boolean';
 interface GetterVectorCase {
   name: string;
-  snapshot: ConfigSnapshot;
+  snapshot: ConfigValues;
   kind: GetterKind;
   key: string;
   default?: string | number | boolean;

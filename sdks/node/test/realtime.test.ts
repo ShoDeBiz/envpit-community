@@ -61,7 +61,7 @@ describe('EnvpitClient realtime — change event (AC-U1/AC-U3)', () => {
         config: [
           () => jsonResponse({ DATABASE_URL: 'postgres://old' }),
           () =>
-            new Response(JSON.stringify({ DATABASE_URL: 'postgres://new' }), {
+            new Response(JSON.stringify({ values: { DATABASE_URL: 'postgres://new' }, secretKeys: [] }), {
               status: 200,
               headers: { 'content-type': 'application/json', etag: '"etag-2"' },
             }),
@@ -516,7 +516,7 @@ describe('EnvpitClient realtime — cacheInfo additive fields', () => {
       fetchImpl: routedFetch({
         config: [
           () =>
-            new Response(JSON.stringify({ K: 'v' }), {
+            new Response(JSON.stringify({ values: { K: 'v' }, secretKeys: [] }), {
               status: 200,
               headers: { 'content-type': 'application/json', etag: '"abc123"' },
             }),

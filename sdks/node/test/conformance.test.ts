@@ -39,7 +39,7 @@ describe('INV-SDK-9 — etag dedup on push (client.ts handlePushSignal)', () => 
         // routedFetch throws "no route configured" and this test fails loudly.
         config: [
           () =>
-            new Response(JSON.stringify({ K: 'v0' }), {
+            new Response(JSON.stringify({ values: { K: 'v0' }, secretKeys: [] }), {
               status: 200,
               headers: { 'content-type': 'application/json', etag: '"same-etag"' },
             }),

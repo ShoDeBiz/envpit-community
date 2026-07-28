@@ -45,13 +45,18 @@ const byName = (name: string): AdversarialCase => {
   return c;
 };
 
-/** `payloadRecipe: "json-object-single-key-K-padded-string"` — build `{"K": "vvv...v"}` whose
- *  UTF-8 byte length equals `targetBytes` exactly (matches the recipe's own documented shape,
- *  same construction `sdks/python/tests/test_json_caps.py` already used as its stopgap). */
+/** `payloadRecipe: "envelope-single-key-K-padded-string"` — build a
+ *  `{"values":{"K":"vvv...v"},"secretKeys":[]}` body whose UTF-8 byte length equals
+ *  `targetBytes` exactly. The property under test is the byte-size cap, which is
+ *  shape-agnostic, so the padding is just computed against this skeleton.
+ *
+ *  The vector documented a bare `{"K": pad}` map until bd:envpit-durd made that shape a
+ *  rejected legacy body; all four languages independently wrapped it in their own helper, so
+ *  the recipe was corrected in the shared vector file rather than left to diverge per language. */
 function buildPaddedJsonBody(targetBytes: number): string {
-  const skeleton = JSON.stringify({ K: '' });
+  const skeleton = JSON.stringify({ values: { K: '' }, secretKeys: [] });
   const padLength = targetBytes - Buffer.byteLength(skeleton, 'utf8');
-  return JSON.stringify({ K: 'v'.repeat(padLength) });
+  return JSON.stringify({ values: { K: 'v'.repeat(padLength) }, secretKeys: [] });
 }
 
 /** `lineRecipe: "sse-config-changed-data-padded-no-terminator"` — a single unterminated chunk
@@ -76,7 +81,9 @@ describe('Adversarial JSON/body/SSE vectors — test-vectors/adversarial-payload
       // day Node adopts AC-SEC-SDK3-2(a)'s cap, THIS assertion must flip to `.rejects.toThrow`.
       const result = await fetchConfig({ host: TEST_HOST, apiKey: 'epk_test', fetchImpl, timeoutMs: 5000 });
       if (result.notModified) throw new Error('expected a 200 snapshot, got 304 (bd:envpit-ed3h narrowing)');
-      expect(result.snapshot['K']).toHaveLength(c.payloadBytes! - Buffer.byteLength(JSON.stringify({ K: '' }), 'utf8'));
+      expect(result.snapshot.values['K']).toHaveLength(
+        c.payloadBytes! - Buffer.byteLength(JSON.stringify({ values: { K: '' }, secretKeys: [] }), 'utf8'),
+      );
     });
 
     it('response body at the recommended cap boundary is accepted (true for Node today regardless of the gap)', async () => {
@@ -87,7 +94,7 @@ describe('Adversarial JSON/body/SSE vectors — test-vectors/adversarial-payload
 
       const result = await fetchConfig({ host: TEST_HOST, apiKey: 'epk_test', fetchImpl, timeoutMs: 5000 });
       if (result.notModified) throw new Error('expected a 200 snapshot, got 304 (bd:envpit-ed3h narrowing)');
-      expect(result.snapshot['K']).toBeDefined();
+      expect(result.snapshot.values['K']).toBeDefined();
     });
   });
 
@@ -119,11 +126,22 @@ describe('Adversarial JSON/body/SSE vectors — test-vectors/adversarial-payload
         new Response(depthBomb, { status: 200, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch;
 
       // Not a hard requirement to REJECT (see file description: "no-crash-no-hang-no-oom" is
-      // satisfied either way) — Node's V8 JSON.parse handles this depth cleanly (verified),
-      // so this positive assertion is Node's own real, current, safe behavior.
-      const result = await fetchConfig({ host: TEST_HOST, apiKey: 'epk_test', fetchImpl, timeoutMs: 5000 });
-      if (result.notModified) throw new Error('expected a 200 snapshot, got 304 (bd:envpit-ed3h narrowing)');
-      expect(Array.isArray(result.snapshot)).toBe(true);
+      // satisfied either way) — Node's V8 JSON.parse handles this depth cleanly (verified), so
+      // no hang/crash/OOM is the only thing under test here.
+      //
+      // bd:envpit-durd side effect: this ALSO closes a pre-existing, separately-noted gap in
+      // this vector file (its own "OUT OF SCOPE for this file" note) — pre-durd, `transport.ts`
+      // cast the raw parsed JSON straight to `ConfigSnapshot` with no shape check at all, so a
+      // bare top-level array like this one would have been silently accepted as a "successful"
+      // config load. The new `{ values, secretKeys }` envelope validation (bd:envpit-durd,
+      // `test-vectors/resolve-body.json`) now rejects any non-conforming top-level shape,
+      // including this one, as a `NetworkError` — matching Python's pre-existing
+      // `isinstance(parsed, dict)` behavior. See the hand-off report for this file's own flagged
+      // follow-up recommending a dedicated bd issue for that inconsistency; this test's outcome
+      // changing from "accepted" to "rejected" IS that follow-up, for Node.
+      await expect(fetchConfig({ host: TEST_HOST, apiKey: 'epk_test', fetchImpl, timeoutMs: 5000 })).rejects.toThrow(
+        NetworkError,
+      );
     });
   });
 

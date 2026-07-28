@@ -91,3 +91,42 @@ describe('stale-while-revalidate on background refresh failure', () => {
     expect(calls).toBe(1);
   });
 });
+
+describe('EnvpitClient#secretKeys() — bd:envpit-durd public secret-key-names surface', () => {
+  it('returns the secret-flagged key NAMES from the current snapshot', async () => {
+    const client = await EnvpitClient.load({
+      apiKey: 'epk_test',
+      pollIntervalMs: 0,
+      fetchImpl: fakeFetch([
+        () => jsonResponse({ API_URL: 'https://api.example.com', DB_PASSWORD: 'hunter2' }, 200, ['DB_PASSWORD']),
+      ]),
+    });
+
+    expect(client.secretKeys()).toEqual(['DB_PASSWORD']);
+    client.close();
+  });
+
+  it('returns an empty array when this environment has no secrets', async () => {
+    const client = await EnvpitClient.load({
+      apiKey: 'epk_test',
+      pollIntervalMs: 0,
+      fetchImpl: fakeFetch([() => jsonResponse({ API_URL: 'https://api.example.com' })]),
+    });
+
+    expect(client.secretKeys()).toEqual([]);
+    client.close();
+  });
+
+  it('never carries a value — only names, even for a set secret', async () => {
+    const client = await EnvpitClient.load({
+      apiKey: 'epk_test',
+      pollIntervalMs: 0,
+      fetchImpl: fakeFetch([() => jsonResponse({ DB_PASSWORD: 'hunter2' }, 200, ['DB_PASSWORD'])]),
+    });
+
+    const serialized = JSON.stringify(client.secretKeys());
+    expect(serialized).not.toContain('hunter2');
+    expect(serialized).toContain('DB_PASSWORD');
+    client.close();
+  });
+});

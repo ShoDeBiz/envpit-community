@@ -1,5 +1,5 @@
 import { AuthenticationError, NetworkError } from './errors.js';
-import type { ConfigSnapshot } from './types.js';
+import type { ConfigSnapshot, ConfigValues } from './types.js';
 
 /** Explicit project+environment scope override (bd:envpit-ed3h Part 2). When set, `fetchConfig`
  *  targets the DISTINCT `GET {host}/api/v1/projects/:project/environments/:environment/config`
@@ -95,11 +95,64 @@ async function performRequest(
 }
 
 async function parseJsonBody(response: Response, url: string): Promise<ConfigSnapshot> {
+  let raw: unknown;
   try {
-    return (await response.json()) as ConfigSnapshot;
+    raw = await response.json();
   } catch {
     throw new NetworkError(`EnvPit returned an invalid JSON response from ${url}.`);
   }
+  return parseConfigSnapshotEnvelope(raw, url);
+}
+
+/**
+ * Validates + unwraps the `{ values, secretKeys }` envelope (bd:envpit-durd, AC-SEC-E11,
+ * `test-vectors/resolve-body.json`). Strict by design: the pre-durd bare `{key: value}` map —
+ * and anything else that isn't exactly this envelope — is REJECTED as a `NetworkError` rather
+ * than accepted as a legacy fallback. Accepting a bare map would mean `secretKeys` reads as
+ * `[]`, which `mergeSnapshotIntoEnv` would take as "this environment has no secrets" and merge
+ * production secrets into `process.env` while reporting that it excluded them — failing loudly
+ * against a pre-durd (or otherwise malformed) server is the safe direction. There were zero
+ * published SDK releases when bd:envpit-durd landed, so no real consumer regresses from this
+ * strictness (see the vector file's `notes.breakingChange`).
+ *
+ * An unmatched name in `secretKeys` (one that doesn't appear in `values`) is deliberately
+ * tolerated, not an error — see `test-vectors/resolve-body.json`'s
+ * `secret-key-absent-from-values-is-tolerated` case: the two lists come from the same
+ * server-side query, but hard-failing on a name this client can't cross-reference would turn
+ * any future server-side widening of `secretKeys` into a client-side outage.
+ */
+function parseConfigSnapshotEnvelope(raw: unknown, url: string): ConfigSnapshot {
+  // Two different failures, same `NetworkError` class, deliberately different messages — the same
+  // split Go and Python make. `notAnObject` means the body was never a config-resolve response at
+  // all (a proxy error page, a truncated stream); `malformed` means it WAS a JSON object but not
+  // this envelope, which is overwhelmingly a server predating the secret-labelling change. One
+  // shared message would tell someone whose reverse proxy returned HTML to upgrade their server.
+  const notAnObject = (): NetworkError =>
+    new NetworkError(`EnvPit returned an invalid JSON response from ${url}.`);
+
+  const malformed = (): NetworkError =>
+    new NetworkError(
+      `EnvPit returned a config-resolve response this SDK does not understand (from ${url}). ` +
+        'Expected `{ values, secretKeys }`. An EnvPit server predating the secret-labelling ' +
+        'change returns a bare key -> value map instead — if you self-host, upgrade the server.',
+    );
+
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw notAnObject();
+  const body = raw as Record<string, unknown>;
+
+  const { values } = body;
+  if (typeof values !== 'object' || values === null || Array.isArray(values)) throw malformed();
+  for (const value of Object.values(values as Record<string, unknown>)) {
+    if (value !== null && typeof value !== 'string') throw malformed();
+  }
+
+  const { secretKeys } = body;
+  if (!Array.isArray(secretKeys)) throw malformed();
+  for (const key of secretKeys) {
+    if (typeof key !== 'string') throw malformed();
+  }
+
+  return { values: values as ConfigValues, secretKeys: secretKeys as string[] };
 }
 
 function describeFailure(cause: unknown): string {

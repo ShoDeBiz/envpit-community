@@ -52,7 +52,7 @@ describe('EnvpitClient realtime — test-vectors/push-payloads.json', () => {
           ? [
               () => jsonResponse({ K: 'v0' }),
               () =>
-                new Response(JSON.stringify({ K: 'v1' }), {
+                new Response(JSON.stringify({ values: { K: 'v1' }, secretKeys: [] }), {
                   status: 200,
                   headers: { 'content-type': 'application/json', etag: c.expectedEtag ?? '' },
                 }),

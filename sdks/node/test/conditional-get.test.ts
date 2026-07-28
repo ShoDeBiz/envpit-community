@@ -32,7 +32,7 @@ describe('EnvpitClient — conditional GET on background poll refresh (bd:envpit
       seenConfigHeaders.push(new Headers(init?.headers));
       configCall += 1;
       if (configCall === 1) {
-        return new Response(JSON.stringify({ K: 'v0' }), {
+        return new Response(JSON.stringify({ values: { K: 'v0' }, secretKeys: [] }), {
           status: 200,
           headers: { 'content-type': 'application/json', etag: '"etag-1"' },
         });
@@ -58,7 +58,7 @@ describe('EnvpitClient — conditional GET on background poll refresh (bd:envpit
       fetchImpl: routedFetch({
         config: [
           () =>
-            new Response(JSON.stringify({ DATABASE_URL: 'postgres://good' }), {
+            new Response(JSON.stringify({ values: { DATABASE_URL: 'postgres://good' }, secretKeys: [] }), {
               status: 200,
               headers: { 'content-type': 'application/json', etag: '"etag-1"' },
             }),

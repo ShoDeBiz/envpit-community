@@ -353,7 +353,7 @@ describe('EnvpitClient realtime — no spurious `change` when the refetched snap
           // actual key/value content this client cares about is byte-identical. Server ETag on
           // THIS refetch matches the push's etag (Sara §4.2 consistency guarantee).
           () =>
-            new Response(JSON.stringify({ DATABASE_URL: 'postgres://same', UNRELATED: 'also-same' }), {
+            new Response(JSON.stringify({ values: { DATABASE_URL: 'postgres://same', UNRELATED: 'also-same' }, secretKeys: [] }), {
               status: 200,
               headers: { 'content-type': 'application/json', etag: '"etag-moved-but-content-same"' },
             }),
@@ -448,14 +448,14 @@ describe('EnvpitClient realtime — concurrent overlapping refresh() calls (gene
     // Resolve B (the LATEST-ISSUED push) FIRST, then A (the now-superseded, earlier-issued push)
     // LAST — modeling ordinary network/scheduling jitter, which the SDK cannot control.
     deferredB.resolve(
-      new Response(JSON.stringify({ K: 'vB' }), {
+      new Response(JSON.stringify({ values: { K: 'vB' }, secretKeys: [] }), {
         status: 200,
         headers: { 'content-type': 'application/json', etag: '"eB"' },
       }),
     );
     await flushMicrotasks();
     deferredA.resolve(
-      new Response(JSON.stringify({ K: 'vA' }), {
+      new Response(JSON.stringify({ values: { K: 'vA' }, secretKeys: [] }), {
         status: 200,
         headers: { 'content-type': 'application/json', etag: '"eA"' },
       }),
@@ -503,14 +503,14 @@ describe('EnvpitClient realtime — concurrent overlapping refresh() calls (gene
     // A (older-issued) resolves FIRST this time — but B (newer-issued) was already in flight
     // before A resolved, so A is already stale generation-wise the instant it arrives.
     deferredA.resolve(
-      new Response(JSON.stringify({ K: 'vA' }), {
+      new Response(JSON.stringify({ values: { K: 'vA' }, secretKeys: [] }), {
         status: 200,
         headers: { 'content-type': 'application/json', etag: '"eA"' },
       }),
     );
     await flushMicrotasks();
     deferredB.resolve(
-      new Response(JSON.stringify({ K: 'vB' }), {
+      new Response(JSON.stringify({ values: { K: 'vB' }, secretKeys: [] }), {
         status: 200,
         headers: { 'content-type': 'application/json', etag: '"eB"' },
       }),
@@ -553,7 +553,7 @@ describe('EnvpitClient realtime — concurrent overlapping refresh() calls (gene
 
     // B (latest-issued) succeeds first, applying "vB"/"eB" and leaving `lastError` null.
     deferredB.resolve(
-      new Response(JSON.stringify({ K: 'vB' }), {
+      new Response(JSON.stringify({ values: { K: 'vB' }, secretKeys: [] }), {
         status: 200,
         headers: { 'content-type': 'application/json', etag: '"eB"' },
       }),

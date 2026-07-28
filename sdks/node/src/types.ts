@@ -1,9 +1,24 @@
 import type { EnvpitError } from './errors.js';
 
-/** One environment's resolved config, exactly the shape `GET /api/v1/config` returns —
- *  key -> value map, secret-flagged keys already decrypted, non-secret keys as-is.
- *  See apps/api/src/config-management/config-resolve.controller.ts (main envpit repo). */
-export type ConfigSnapshot = Record<string, string | null>;
+/** One environment's resolved config VALUES only — key -> value map, secret-flagged keys
+ *  already decrypted, non-secret keys as-is. This is the shape `diffSnapshots`/`ChangeEvent`
+ *  operate over (bd:envpit-durd — a `secretKeys`-only change is not a config change, so the
+ *  diff deliberately stays values-only) and the shape vector families like `getters.json` /
+ *  `snapshot-diff.json` describe. See `ConfigSnapshot` below for the full wire envelope this
+ *  is nested inside. */
+export type ConfigValues = Record<string, string | null>;
+
+/** One environment's resolved config, exactly the shape `GET /api/v1/config` returns as of
+ *  bd:envpit-durd (AC-SEC-E11) — `{ values, secretKeys }`, NOT the pre-durd bare `values` map
+ *  this type used to alias. `secretKeys` carries KEY NAMES only, never values: an unset
+ *  secret still appears here with a `null` `values` entry, because the flag is key-level, not
+ *  value-level (`test-vectors/resolve-body.json`). See
+ *  apps/api/src/config-management/config-resolve.controller.ts (main envpit repo) for the
+ *  authoritative schema. */
+export interface ConfigSnapshot {
+  values: ConfigValues;
+  secretKeys: readonly string[];
+}
 
 /** Structurally compatible with `console`, `pino`, and `winston` — pass any of those, or a
  *  hand-rolled object with a subset of these methods. Every method is optional; absent

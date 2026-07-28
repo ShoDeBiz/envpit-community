@@ -29,13 +29,13 @@ function capturingFetch(response: Response): { fetchImpl: typeof fetch; seenHead
 
 describe('fetchConfig — path building (default alias vs explicit scope, Part 2)', () => {
   it('hits the key-scope-inferred alias GET /api/v1/config when no scope is given', async () => {
-    const cap = capturingFetch(new Response(JSON.stringify({ K: 'v' }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const cap = capturingFetch(new Response(JSON.stringify({ values: { K: 'v' }, secretKeys: [] }), { status: 200, headers: { 'content-type': 'application/json' } }));
     await fetchConfig({ host: HOST, apiKey: 'epk_test', fetchImpl: cap.fetchImpl, timeoutMs: 1000 });
     expect(cap.seenUrl()).toBe('https://example.test/api/v1/config');
   });
 
   it('hits GET /api/v1/projects/:project/environments/:environment/config when scope is given', async () => {
-    const cap = capturingFetch(new Response(JSON.stringify({ K: 'v' }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const cap = capturingFetch(new Response(JSON.stringify({ values: { K: 'v' }, secretKeys: [] }), { status: 200, headers: { 'content-type': 'application/json' } }));
     await fetchConfig({
       host: HOST,
       apiKey: 'epk_test',
@@ -51,19 +51,19 @@ describe('fetchConfig — path building (default alias vs explicit scope, Part 2
 
 describe('fetchConfig — conditional GET (Part 1)', () => {
   it('does NOT send If-None-Match on a request with no prior etag', async () => {
-    const cap = capturingFetch(new Response(JSON.stringify({ K: 'v' }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const cap = capturingFetch(new Response(JSON.stringify({ values: { K: 'v' }, secretKeys: [] }), { status: 200, headers: { 'content-type': 'application/json' } }));
     await fetchConfig({ host: HOST, apiKey: 'epk_test', fetchImpl: cap.fetchImpl, timeoutMs: 1000 });
     expect(cap.seenHeaders()?.has('if-none-match')).toBe(false);
   });
 
   it('sends If-None-Match: <etag> when a prior etag is supplied', async () => {
-    const cap = capturingFetch(new Response(JSON.stringify({ K: 'v' }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const cap = capturingFetch(new Response(JSON.stringify({ values: { K: 'v' }, secretKeys: [] }), { status: 200, headers: { 'content-type': 'application/json' } }));
     await fetchConfig({ host: HOST, apiKey: 'epk_test', fetchImpl: cap.fetchImpl, timeoutMs: 1000, ifNoneMatch: '"abc123"' });
     expect(cap.seenHeaders()?.get('if-none-match')).toBe('"abc123"');
   });
 
   it('still sends X-Api-Key alongside If-None-Match', async () => {
-    const cap = capturingFetch(new Response(JSON.stringify({ K: 'v' }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const cap = capturingFetch(new Response(JSON.stringify({ values: { K: 'v' }, secretKeys: [] }), { status: 200, headers: { 'content-type': 'application/json' } }));
     await fetchConfig({ host: HOST, apiKey: 'epk_test', fetchImpl: cap.fetchImpl, timeoutMs: 1000, ifNoneMatch: '"abc123"' });
     expect(cap.seenHeaders()?.get('x-api-key')).toBe('epk_test');
   });
@@ -77,10 +77,10 @@ describe('fetchConfig — conditional GET (Part 1)', () => {
 
   it('returns { notModified: false, snapshot, etag } on a normal 200', async () => {
     const cap = capturingFetch(
-      new Response(JSON.stringify({ K: 'v' }), { status: 200, headers: { 'content-type': 'application/json', etag: '"new-etag"' } }),
+      new Response(JSON.stringify({ values: { K: 'v' }, secretKeys: [] }), { status: 200, headers: { 'content-type': 'application/json', etag: '"new-etag"' } }),
     );
     const result = await fetchConfig({ host: HOST, apiKey: 'epk_test', fetchImpl: cap.fetchImpl, timeoutMs: 1000 });
-    expect(result).toEqual({ notModified: false, snapshot: { K: 'v' }, etag: '"new-etag"' });
+    expect(result).toEqual({ notModified: false, snapshot: { values: { K: 'v' }, secretKeys: [] }, etag: '"new-etag"' });
   });
 
   it('a 304 still maps 401/403 to AuthenticationError and other non-2xx to NetworkError (regression: 304 branch does not swallow other statuses)', async () => {

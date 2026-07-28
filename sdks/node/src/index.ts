@@ -7,6 +7,7 @@ export type {
   ChangeEvent,
   ChangeTrigger,
   ConfigSnapshot,
+  ConfigValues,
   ConnectionEvent,
   ConnectionMode,
   ConnectionReason,

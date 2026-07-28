@@ -7,6 +7,7 @@ import type {
   CacheInfo,
   ChangeTrigger,
   ConfigSnapshot,
+  ConfigValues,
   ConnectionMode,
   ConnectionReason,
   EnvpitClientEvents,
@@ -253,14 +254,29 @@ export class EnvpitClient {
    * after a `change` if you need the merge to catch up, or keep using `client.get(...)` for
    * anything that must always be current.
    *
-   * See `MergeIntoProcessEnvOptions` for the required `acknowledgeSecretsMayBeIncluded` flag and
-   * why it can't be a real per-key secret filter today.
+   * `options` is entirely optional (bd:envpit-durd) — the zero-arg call
+   * `await envpit.mergeIntoProcessEnv()` is the SAFE default: it merges only non-secret keys
+   * (`includeSecrets` defaults to `false`) and never clobbers a `process.env` value the host
+   * already set (`override` defaults to `false`). Naming `includeSecrets: true` at the call
+   * site IS the acknowledgment that secret-flagged values will be written into `process.env` —
+   * see `MergeIntoProcessEnvOptions` for the exposure that trades against.
    */
-  mergeIntoProcessEnv(options: MergeIntoProcessEnvOptions): MergeIntoProcessEnvResult {
+  mergeIntoProcessEnv(options: MergeIntoProcessEnvOptions = {}): MergeIntoProcessEnvResult {
     if (this.snapshot === null) {
       throw new Error('EnvPit: config not loaded yet — this should be unreachable via EnvpitClient.load().');
     }
     return mergeSnapshotIntoEnv(this.snapshot, process.env, options);
+  }
+
+  /** Key NAMES (never values) of every secret-flagged key in this client's current snapshot —
+   *  the same passthrough list the server sent as `secretKeys` (bd:envpit-durd, AC-SEC-E11).
+   *  Lets a caller write its own filter (e.g. over a hand-rolled config object) without
+   *  re-fetching or re-deriving anything the SDK already has in memory. */
+  secretKeys(): readonly string[] {
+    if (this.snapshot === null) {
+      throw new Error('EnvPit: config not loaded yet — this should be unreachable via EnvpitClient.load().');
+    }
+    return this.snapshot.secretKeys;
   }
 
   /** Raw string read. Throws `MissingKeyError` if the key is absent/null and no
@@ -317,7 +333,7 @@ export class EnvpitClient {
    *  loaded snapshot's own key set (bd:envpit-ed3h Part 3) — shared by `get()`/`getInt()`/
    *  `getBoolean()` so the suggestion behaves identically no matter which getter missed. */
   private missingKeyError(key: string): MissingKeyError {
-    const knownKeys = this.snapshot === null ? [] : Object.keys(this.snapshot);
+    const knownKeys = this.snapshot === null ? [] : Object.keys(this.snapshot.values);
     return new MissingKeyError(key, suggestNearestKey(key, knownKeys));
   }
 
@@ -329,7 +345,7 @@ export class EnvpitClient {
     if (this.snapshot === null) {
       throw new Error('EnvPit: config not loaded yet — this should be unreachable via EnvpitClient.load().');
     }
-    const value = this.snapshot[key];
+    const value = this.snapshot.values[key];
     return value === null || value === undefined ? undefined : value;
   }
 
@@ -392,7 +408,7 @@ export class EnvpitClient {
       // values, never a torn state. No `change` on the very first load (AC-U3), and none when
       // nothing actually differs (this section's own contract, and AC-U3's steady-state half).
       if (!isFirstLoad && previousSnapshot !== null) {
-        const changedKeys = diffSnapshots(previousSnapshot, snapshot);
+        const changedKeys = diffSnapshots(previousSnapshot.values, snapshot.values);
         if (changedKeys.length > 0) {
           const receivedAt = new Date();
           this.lastChangeAt = receivedAt;
@@ -423,11 +439,14 @@ export class EnvpitClient {
   }
 }
 
-/** Computes changed key NAMES between two in-memory snapshots — never sent over the wire, and
- *  never includes values (log-safe by construction, §3.1 principle 1). A key absent from a
- *  snapshot and a key present-with-`null` are treated identically ("unset"), matching
- *  `readRaw()`'s own missing-vs-null equivalence. */
-function diffSnapshots(previous: ConfigSnapshot, next: ConfigSnapshot): string[] {
+/** Computes changed key NAMES between two in-memory snapshots' VALUES — never sent over the
+ *  wire, and never includes values (log-safe by construction, §3.1 principle 1). Deliberately
+ *  values-only (bd:envpit-durd): a `secretKeys`-only change (the server re-flagging a key,
+ *  values unchanged) is NOT a config change and must not fire `change` — out of scope for this
+ *  diff, unchanged from before the envelope existed. A key absent from a snapshot and a key
+ *  present-with-`null` are treated identically ("unset"), matching `readRaw()`'s own
+ *  missing-vs-null equivalence. */
+function diffSnapshots(previous: ConfigValues, next: ConfigValues): string[] {
   const keys = new Set([...Object.keys(previous), ...Object.keys(next)]);
   const changed: string[] = [];
   for (const key of keys) {
