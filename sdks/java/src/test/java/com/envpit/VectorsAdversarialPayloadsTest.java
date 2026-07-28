@@ -42,11 +42,20 @@ class VectorsAdversarialPayloadsTest {
         return ((Number) c.get(key)).intValue();
     }
 
-    /** {@code payloadRecipe: "json-object-single-key-K-padded-string"} — the file's own recipe, verbatim. */
+    /**
+     * {@code payloadRecipe: "envelope-single-key-K-padded-string"} (suiteVersion 1.2.0 — the vector
+     * file's own recipe, verbatim: {@code {"values": {"K": pad}, "secretKeys": []}}, {@code pad}
+     * repeated {@code 'v'} until the serialized object's total UTF-8 byte length equals {@code
+     * payloadBytes}). Prior to bd:envpit-durd this recipe built a BARE {@code {"K": pad}} map,
+     * which the vector file's own notes now record as RESOLVED — see {@code
+     * adversarial-payloads.json}'s top-level {@code description}/{@code notes} for the full
+     * history of why the recipe itself had to change at the shared-vector level, not just be
+     * patched around per language.
+     */
     private static String buildPaddedJsonBody(int targetBytes) {
-        String skeleton = "{\"K\": \"\"}"; // json.dumps({"K": ""}) — 9 ASCII chars, 9 bytes
+        String skeleton = "{\"values\":{\"K\": \"\"},\"secretKeys\":[]}"; // envelope around json.dumps({"K": ""})
         int padLength = targetBytes - skeleton.length();
-        return "{\"K\": \"" + "v".repeat(padLength) + "\"}";
+        return "{\"values\":{\"K\": \"" + "v".repeat(padLength) + "\"},\"secretKeys\":[]}";
     }
 
     /** {@code lineRecipe: "sse-config-changed-data-padded-no-terminator"} — the file's own recipe, verbatim. */
@@ -84,7 +93,7 @@ class VectorsAdversarialPayloadsTest {
         try (TestSupport.TestServer server = TestSupport.TestServer.start()) {
             server.configHandler = TestSupport.fixedResponse(200, body);
             Transport.FetchResult result = Transport.fetchConfig(TestSupport.testHttpClient(), server.baseUrl, "epk_test", Duration.ofSeconds(10));
-            assertTrue(result.snapshot().containsKey("K"));
+            assertTrue(result.values().containsKey("K"));
         }
     }
 

@@ -1,5 +1,7 @@
 package com.envpit.spring;
 
+import com.envpit.EnvpitClient;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
@@ -187,6 +189,56 @@ class EnvpitEnvironmentPostProcessorTest {
     }
 
     // ---------------------------------------------------------------------------------------
+    // bd:envpit-durd — server-flagged secrets, end to end (real client, real server response;
+    // NOT assumed from #knownSecretKeys() being wired unconditionally — verified directly).
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    void serverFlaggedSecretKeysAreExcludedFromTheEnvironmentByDefault() {
+        server = SpringTestSupport.TestServer.serving(SpringTestSupport.toEnvelopeJson(
+                Map.of("DB_PASSWORD", "hunter2", "API_URL", "https://x"), Set.of("DB_PASSWORD")));
+        ConfigurableApplicationContext ctx = boot(
+                "--envpit.api-key=epk_test", "--envpit.host=" + server.baseUrl);
+
+        ConfigurableEnvironment env = ctx.getEnvironment();
+        assertNull(env.getProperty("DB_PASSWORD"), "a server-flagged secret must be excluded by default");
+        assertEquals("https://x", env.getProperty("API_URL"), "a non-secret key must still resolve normally");
+    }
+
+    @Test
+    void includeSecretsTruePropertyDeliberatelyLetsServerFlaggedSecretsIntoTheEnvironment() {
+        server = SpringTestSupport.TestServer.serving(SpringTestSupport.toEnvelopeJson(
+                Map.of("DB_PASSWORD", "hunter2", "API_URL", "https://x"), Set.of("DB_PASSWORD")));
+        ConfigurableApplicationContext ctx = boot(
+                "--envpit.api-key=epk_test", "--envpit.host=" + server.baseUrl,
+                "--envpit.include-secrets=true");
+
+        ConfigurableEnvironment env = ctx.getEnvironment();
+        assertEquals("hunter2", env.getProperty("DB_PASSWORD"),
+                "envpit.include-secrets=true must deliberately let the flagged secret through");
+        assertEquals("https://x", env.getProperty("API_URL"));
+    }
+
+    @Test
+    void excludeKeysAndServerFlaggedSecretsCombineRatherThanOverride() {
+        // envpit.exclude-keys (explicit, user-named) and knownSecretKeys() (server-flagged) are
+        // two independent mechanisms that UNION — setting envpit.include-secrets=true opts
+        // server-flagged secrets back in, but must never resurrect a key the caller explicitly
+        // named in envpit.exclude-keys.
+        server = SpringTestSupport.TestServer.serving(SpringTestSupport.toEnvelopeJson(
+                Map.of("DB_PASSWORD", "hunter2", "OTHER_SECRET_LIKE_KEY", "x", "API_URL", "https://x"),
+                Set.of("DB_PASSWORD")));
+        ConfigurableApplicationContext ctx = boot(
+                "--envpit.api-key=epk_test", "--envpit.host=" + server.baseUrl,
+                "--envpit.include-secrets=true", "--envpit.exclude-keys=OTHER_SECRET_LIKE_KEY");
+
+        ConfigurableEnvironment env = ctx.getEnvironment();
+        assertEquals("hunter2", env.getProperty("DB_PASSWORD"), "opted-in server-flagged secret must resolve");
+        assertNull(env.getProperty("OTHER_SECRET_LIKE_KEY"), "explicit envpit.exclude-keys must still apply");
+        assertEquals("https://x", env.getProperty("API_URL"));
+    }
+
+    // ---------------------------------------------------------------------------------------
     // Assumption check (NO MAGIC) — Spring's relaxed binding, not this module's own code
     // ---------------------------------------------------------------------------------------
 
@@ -224,20 +276,33 @@ class EnvpitEnvironmentPostProcessorTest {
     }
 
     @Test
-    void filterSnapshotExcludesWhateverTheCombinedExcludeSetContains_socketWiringProof() {
-        // Simulates the day EnvpitClient.knownSecretKeys() reports a real key: this proves the
-        // exclude-set UNION mechanics `postProcessEnvironment` relies on are correct today, so
-        // the day that method's body changes, nothing here needs to change.
-        Map<String, String> snapshot = Map.of("DB_PASSWORD", "hunter2", "JWT_SECRET", "s3cr3t", "API_URL", "https://x");
-        Set<String> explicitExclude = Set.of(); // caller passed no envpit.exclude-keys
-        Set<String> simulatedKnownSecretKeys = Set.of("DB_PASSWORD", "JWT_SECRET"); // future server-provided flag
+    void filterSnapshotExcludesTheCombinedExcludeSetBuiltFromARealClientsKnownSecretKeys() {
+        // bd:envpit-durd closed the protocol gap this test used to simulate with a hand-built
+        // stand-in set ("the future is now" — rewritten per that bd's own instruction). This is a
+        // REAL client, loaded against a real local server whose envelope response flags two real
+        // secret key names — client.knownSecretKeys() below is the actual server-reported set,
+        // not a simulation, proving the exclude-set UNION mechanics `postProcessEnvironment`
+        // relies on against real end-to-end behavior.
+        server = SpringTestSupport.TestServer.serving(SpringTestSupport.toEnvelopeJson(
+                Map.of("DB_PASSWORD", "hunter2", "JWT_SECRET", "s3cr3t", "API_URL", "https://x"),
+                Set.of("DB_PASSWORD", "JWT_SECRET")));
 
-        Set<String> combined = new LinkedHashSet<>(explicitExclude);
-        combined.addAll(simulatedKnownSecretKeys);
-        Map<String, Object> result = EnvpitEnvironmentPostProcessor.filterSnapshot(snapshot, combined);
+        EnvpitClient client = EnvpitClient.builder()
+                .apiKey("epk_test").host(server.baseUrl).pollInterval(java.time.Duration.ZERO).load();
+        try {
+            Set<String> explicitExclude = Set.of(); // caller passed no envpit.exclude-keys
+            assertEquals(Set.of("DB_PASSWORD", "JWT_SECRET"), client.knownSecretKeys(),
+                    "test precondition: the real client must report the real server-flagged secret set");
 
-        assertFalse(result.containsKey("DB_PASSWORD"));
-        assertFalse(result.containsKey("JWT_SECRET"));
-        assertTrue(result.containsKey("API_URL"));
+            Set<String> combined = new LinkedHashSet<>(explicitExclude);
+            combined.addAll(client.knownSecretKeys());
+            Map<String, Object> result = EnvpitEnvironmentPostProcessor.filterSnapshot(client.snapshot(), combined);
+
+            assertFalse(result.containsKey("DB_PASSWORD"));
+            assertFalse(result.containsKey("JWT_SECRET"));
+            assertTrue(result.containsKey("API_URL"));
+        } finally {
+            client.close();
+        }
     }
 }

@@ -211,7 +211,7 @@ public final class EnvpitClient implements AutoCloseable {
             Transport.FetchResult first = Transport.fetchConfig(resolvedHttpClient, resolvedHost, resolvedApiKey, resolvedTimeout);
 
             CacheState initial = new CacheState(
-                    new ConfigSnapshot(first.snapshot()), Instant.now(), null, first.etag(),
+                    new ConfigSnapshot(first.values(), first.secretKeys()), Instant.now(), null, first.etag(),
                     pollInterval.compareTo(Duration.ZERO) > 0 ? RefreshMode.POLLING : RefreshMode.OFF,
                     null, null);
 
@@ -373,31 +373,42 @@ public final class EnvpitClient implements AutoCloseable {
     }
 
     /**
-     * Prepared "socket" for server-provided secret metadata (Oliver, bd:envpit-yvyr, 2026-07-28
-     * correction). ALWAYS empty today: {@code GET /api/v1/config} ({@link Transport}) returns a
-     * flat {@code key -> value} map with no {@code is_secret} field at all — independently
-     * verified against {@code apps/api/src/config-management/config-resolve.controller.ts}'s
-     * documented response schema ({@code schema: { additionalProperties: { type: 'string',
-     * nullable: true } } }) and {@code ConfigService.resolveEnvironmentSecretsInternal}'s {@code
-     * Record<string, string | null>} return type in the main {@code envpit} repo (that method
-     * DOES compute {@code row.isSecret} server-side to decide whether to decrypt, then discards
-     * the flag before returning — the flag exists in the database, not on the wire). Same
-     * evidence chain Python's {@code client.py:_known_secret_keys()} and Node's {@code
-     * process-env-merge.ts}'s "FUTURE FILTER EXTENSION POINT" comment independently cite.
+     * The exact set of key NAMES (never values) the server flagged {@code is_secret=true} for
+     * this environment, as of the last successful fetch (initial {@link Builder#load()} or a
+     * background refresh — bd:envpit-durd closed the protocol gap this method used to be a
+     * placeholder for). {@code GET /api/v1/config} ({@link Transport}) now returns an envelope,
+     * {@code {values, secretKeys}} (test-vectors/resolve-body.json), instead of the pre-durd flat
+     * {@code key -> value} map that carried no per-key signal at all — independently verified
+     * against {@code apps/api/src/config-management/config-resolve.controller.ts}'s current
+     * {@code @ApiResponse} schema in the main {@code envpit} repo. Same wire contract Python's
+     * {@code client.py:_known_secret_keys()} and Node's {@code process-env-merge.ts} read.
      *
-     * <p>NOT a placeholder for a not-yet-written key-name heuristic (matching {@code
-     * SECRET}/{@code PASSWORD}/{@code TOKEN} in the key name) — a heuristic would be wrong in
-     * both directions: {@code DATABASE_URL} commonly embeds a password and would slip straight
-     * past any such pattern, while a legitimately non-secret key merely spelled {@code *_TOKEN}
-     * would false-positive.
+     * <p>A key present in {@code secretKeys} whose value is currently unset in this environment
+     * still appears here (the flag is key-level, not value-level) — see {@code
+     * unset-secret-is-still-listed} in resolve-body.json.
      *
-     * <p>The day the wire protocol adds per-key secret metadata, only THIS method's body needs to
-     * change — every caller in {@code envpit-spring-boot-starter} (and any future framework
-     * integration) already folds its result into its excluded-keys set unconditionally, so the
-     * fix lands in exactly one place.
+     * <p>NOT a key-name heuristic (matching {@code SECRET}/{@code PASSWORD}/{@code TOKEN} in the
+     * key name) — this is the real, server-reported flag; a heuristic would have been wrong in
+     * both directions ({@code DATABASE_URL} commonly embeds a password and would slip past any
+     * such pattern). Getters ({@link #get}, {@link #getInt}, {@link #getBoolean}) are UNCHANGED
+     * by this method — they still return secret values by key name like any other value; only the
+     * native-environment-merge path ({@code envpit-spring-boot-starter}'s {@code
+     * EnvpitEnvironmentPostProcessor}, which folds this set into its excluded-key set unless a
+     * deployment opts in via {@code envpit.include-secrets}) filters on it.
+     *
+     * <p>Unmodifiable defensive copy — mutating the returned {@link Set} never affects this
+     * client's own state, matching {@link #snapshot()}'s identical guarantee.
+     *
+     * @throws IllegalStateException structurally unreachable via the public API — see {@link
+     *     #snapshot()}'s identical guard.
      */
     public Set<String> knownSecretKeys() {
-        return Set.of();
+        CacheState st = this.state;
+        if (st == null) {
+            throw new IllegalStateException(
+                    "envpit: config not loaded yet — this should be unreachable via EnvpitClient.builder()...load()");
+        }
+        return Set.copyOf(st.snapshot().secretKeys());
     }
 
     // ---- subscribe (callback-based; single daemon dispatch thread — see class doc comment) -----
@@ -601,7 +612,7 @@ public final class EnvpitClient implements AutoCloseable {
 
         CacheState prev = this.state;
         ConfigSnapshot previousSnapshot = prev.snapshot();
-        ConfigSnapshot newSnapshot = new ConfigSnapshot(result.snapshot());
+        ConfigSnapshot newSnapshot = new ConfigSnapshot(result.values(), result.secretKeys());
         Instant now = Instant.now();
         List<String> changed = SnapshotDiff.diff(previousSnapshot, newSnapshot);
 

@@ -40,7 +40,7 @@ class ThreadLeakTest {
         HttpClient sharedHttpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
 
         try (TestSupport.TestServer server = TestSupport.TestServer.start()) {
-            server.configHandler = TestSupport.fixedResponse(200, "{\"K\":\"v0\"}");
+            server.configHandler = TestSupport.fixedResponse(200, "{\"values\":{\"K\":\"v0\"},\"secretKeys\":[]}");
             server.eventsHandler = TestSupport.fixedResponse(500, "");
 
             Set<String> baseline = envpitOwnedThreadNames();
@@ -86,7 +86,7 @@ class ThreadLeakTest {
     @Test
     void pollDisabledClientCreatesNoBackgroundThreadsAtAll() throws Exception {
         try (TestSupport.TestServer server = TestSupport.TestServer.start()) {
-            EnvpitClient client = TestSupport.newLoadedClient(server, "{\"K\":\"v0\"}"); // pollInterval = ZERO
+            EnvpitClient client = TestSupport.newLoadedClient(server, "{\"values\":{\"K\":\"v0\"},\"secretKeys\":[]}"); // pollInterval = ZERO
             try {
                 // INV-SDK-8: pollIntervalMs 0 = no background refresh of any kind, including realtime.
                 Set<String> names = envpitOwnedThreadNames();

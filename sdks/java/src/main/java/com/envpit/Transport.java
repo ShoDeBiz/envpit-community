@@ -14,8 +14,11 @@ import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * {@code GET {host}/api/v1/config} — the one real HTTP call this SDK makes on the initial-load
@@ -37,7 +40,15 @@ final class Transport {
     private Transport() {
     }
 
-    record FetchResult(Map<String, String> snapshot, String etag) {
+    /**
+     * bd:envpit-durd: {@code GET /api/v1/config}'s 200 body is an ENVELOPE, {@code {values:
+     * {key: string|null}, secretKeys: [string]}} — not the pre-durd bare {@code {key: value}}
+     * map (test-vectors/resolve-body.json is the authoritative spec for every check below).
+     * {@code secretKeys} carries key NAMES only, never values; a name absent from {@code values}
+     * is tolerated, not an error (a future server-side widening of {@code secretKeys} must not
+     * turn into a client-side outage).
+     */
+    record FetchResult(Map<String, String> values, Set<String> secretKeys, String etag) {
     }
 
     static FetchResult fetchConfig(HttpClient httpClient, String host, String apiKey, Duration timeout) {
@@ -105,23 +116,75 @@ final class Transport {
             throw new NetworkException("EnvPit returned an invalid JSON response from " + url + ".");
         }
 
-        Map<String, String> snapshot = new LinkedHashMap<>();
-        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+        // bd:envpit-durd (test-vectors/resolve-body.json): strict envelope, {values, secretKeys}
+        // BOTH required. A pre-durd bare map (no "values"/"secretKeys" keys at all) fails this
+        // check and is REJECTED here, not accepted as a legacy fallback — see resolve-body.json's
+        // own `notes.breakingChange`: silently treating a bare map as "secretKeys = []" would make
+        // every native-env-merge path believe an environment has no secrets and merge them while
+        // reporting none were found. There were zero published SDK releases when this landed, so
+        // failing loudly against a pre-durd server is the safe direction, not a compatibility break
+        // of anything real. `{}` is ambiguous the same way (a pre-durd empty environment vs. a
+        // new server that dropped both fields) and is rejected for the identical reason.
+        //
+        // This one check gets a cause-naming message rather than the generic one the shape
+        // violations below use: it is the check a pre-durd server actually trips, and the most
+        // probable way to reach it is a current SDK pointed at an older self-hosted server.
+        // "invalid JSON response" alone would send someone hunting a network or proxy fault they
+        // do not have. Matches Node's and Python's wording for the same condition.
+        if (!rawMap.containsKey("values") || !rawMap.containsKey("secretKeys")) {
+            throw new NetworkException(
+                    "EnvPit returned a config-resolve response this SDK does not understand (from " + url
+                            + "): expected {values, secretKeys}. An EnvPit server predating the "
+                            + "secret-labelling change returns a bare key/value map instead — if you "
+                            + "self-host, upgrade the server.");
+        }
+
+        Object rawValues = rawMap.get("values");
+        if (!(rawValues instanceof Map<?, ?> rawValuesMap)) {
+            // Covers both `values` missing-shape variants the vectors name: a bare array/string/etc,
+            // and `values: null` (a JSON null is not instanceof Map either).
+            throw new NetworkException("EnvPit returned an invalid JSON response from " + url + ".");
+        }
+
+        Object rawSecretKeys = rawMap.get("secretKeys");
+        if (!(rawSecretKeys instanceof List<?> rawSecretKeysList)) {
+            // A bare string is iterable character-by-character in some languages this vector suite
+            // spans — Java has no such accidental-iteration risk, but the type check is still
+            // required: this must be a JSON array, not any other shape.
+            throw new NetworkException("EnvPit returned an invalid JSON response from " + url + ".");
+        }
+
+        Map<String, String> values = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : rawValuesMap.entrySet()) {
             String key = String.valueOf(entry.getKey());
             Object value = entry.getValue();
             if (value == null) {
-                snapshot.put(key, null);
+                values.put(key, null);
             } else if (value instanceof String s) {
-                snapshot.put(key, s);
+                values.put(key, s);
             } else {
                 // The config-snapshot contract is a FLAT string map (Sara §2.3) — a non-string,
-                // non-null value is a shape violation, not something to silently coerce.
+                // non-null value is a shape violation, not something to silently coerce. Unchanged
+                // from the pre-durd contract; this check simply moved inside `values`.
                 throw new NetworkException("EnvPit returned an invalid JSON response from " + url + ".");
             }
         }
 
+        Set<String> secretKeys = new LinkedHashSet<>();
+        for (Object el : rawSecretKeysList) {
+            if (!(el instanceof String s)) {
+                throw new NetworkException("EnvPit returned an invalid JSON response from " + url + ".");
+            }
+            // A secretKeys name absent from `values` is tolerated, not cross-validated here — see
+            // resolve-body.json's "secret-key-absent-from-values-is-tolerated" case: the two lists
+            // are built from the same server-side query, and a client that hard-failed on a name it
+            // couldn't cross-reference would turn any future server-side widening of `secretKeys`
+            // into an outage.
+            secretKeys.add(s);
+        }
+
         String etag = response.headers().firstValue("Etag").orElse("");
-        return new FetchResult(snapshot, etag);
+        return new FetchResult(values, secretKeys, etag);
     }
 
     private static void drainQuietly(InputStream body) {

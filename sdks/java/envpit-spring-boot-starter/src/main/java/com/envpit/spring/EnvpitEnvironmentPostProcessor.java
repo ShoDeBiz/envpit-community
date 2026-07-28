@@ -37,6 +37,9 @@ import java.util.Set;
  *   host: https://envpit.com      # default shown; override for self-hosted/local dev
  *   timeout: 5s                   # default 5s — the ONE synchronous boot-time fetch's own timeout
  *   exclude-keys: DB_PASSWORD,JWT_SECRET   # comma-separated; kept out of the Environment
+ *   include-secrets: false        # default false — set true to deliberately let server-flagged
+ *                                   # secret keys (EnvpitClient#knownSecretKeys()) into the
+ *                                   # Environment; see "Secrets" below before enabling
  * }</pre>
  *
  * <p><b>Deliberately NOT supported: {@code envpit.project} / {@code envpit.environment}</b> —
@@ -89,10 +92,18 @@ import java.util.Set;
  * {@code @Value} for those specific keys.
  *
  * <h2>Secrets (decision #1, owner-settled — see {@link EnvpitClient#knownSecretKeys()})</h2>
- * {@link EnvpitClient#knownSecretKeys()} is folded into the excluded-key set unconditionally,
- * every call, alongside {@code envpit.exclude-keys}. It is ALWAYS empty today (protocol gap,
- * documented on that method) — this is the identical "prepared socket" pattern Python's {@code
- * populate_environ()} uses for the same bd.
+ * bd:envpit-durd closed the protocol gap {@link EnvpitClient#knownSecretKeys()} used to be a
+ * placeholder for: it now returns the real, server-reported set of secret-flagged key names for
+ * this environment. By default (matching every language's identical default —
+ * test-vectors/env-merge.json's {@code includeSecrets} defaults to {@code false}) this starter
+ * folds that set into the excluded-key set, alongside {@code envpit.exclude-keys}, so secrets
+ * NEVER reach {@code @Value}/{@code @ConfigurationProperties} unless a deployment deliberately
+ * opts in with {@code envpit.include-secrets=true}. Naming that property at the call site IS the
+ * acknowledgment (same posture Node's {@code includeSecrets: true} call-site argument takes) —
+ * there is no second flag. Opting in writes decrypted secret values into the Spring {@code
+ * Environment}, from which they are readable by {@code @Value}, actuator {@code /env} (if
+ * exposed), and anything else that walks {@code Environment} property sources — know your
+ * exposure before setting it.
  */
 public final class EnvpitEnvironmentPostProcessor implements EnvironmentPostProcessor, Ordered {
 
@@ -104,6 +115,7 @@ public final class EnvpitEnvironmentPostProcessor implements EnvironmentPostProc
     private static final String PROP_HOST = PREFIX + "host";
     private static final String PROP_TIMEOUT = PREFIX + "timeout";
     private static final String PROP_EXCLUDE_KEYS = PREFIX + "exclude-keys";
+    private static final String PROP_INCLUDE_SECRETS = PREFIX + "include-secrets";
 
     @Override
     public int getOrder() {
@@ -133,7 +145,11 @@ public final class EnvpitEnvironmentPostProcessor implements EnvironmentPostProc
         EnvpitClient client = loadClient(environment, apiKey);
         try {
             Set<String> excludeKeys = new LinkedHashSet<>(resolveExcludeKeys(environment));
-            excludeKeys.addAll(client.knownSecretKeys()); // the socket — always empty today
+            if (!resolveIncludeSecrets(environment)) {
+                // Default (and every language's identical default, test-vectors/env-merge.json):
+                // secrets are excluded unless a deployment deliberately opts in.
+                excludeKeys.addAll(client.knownSecretKeys());
+            }
 
             Map<String, Object> values = filterSnapshot(client.snapshot(), excludeKeys);
             environment.getPropertySources().addAfter(
@@ -151,6 +167,11 @@ public final class EnvpitEnvironmentPostProcessor implements EnvironmentPostProc
     private static boolean isEnabled(ConfigurableEnvironment environment) {
         String raw = environment.getProperty(PROP_ENABLED);
         return raw == null || Boolean.parseBoolean(raw);
+    }
+
+    private static boolean resolveIncludeSecrets(ConfigurableEnvironment environment) {
+        String raw = environment.getProperty(PROP_INCLUDE_SECRETS);
+        return raw != null && Boolean.parseBoolean(raw);
     }
 
     private static EnvpitClient loadClient(ConfigurableEnvironment environment, String apiKey) {

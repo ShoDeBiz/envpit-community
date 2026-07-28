@@ -84,7 +84,7 @@ class ConnectionResetTest {
     @Test
     void backgroundRefreshAgainstAResetConnectionRecordsNetworkExceptionNotRaw() throws IOException {
         try (TestSupport.TestServer server = TestSupport.TestServer.start()) {
-            EnvpitClient client = TestSupport.newLoadedClient(server, "{\"K\":\"v0\"}");
+            EnvpitClient client = TestSupport.newLoadedClient(server, "{\"values\":{\"K\":\"v0\"},\"secretKeys\":[]}");
             try {
                 String resetHost = startResetListener();
                 client.host = resetHost;
@@ -113,7 +113,7 @@ class ConnectionResetTest {
     @Test
     void onErrorListenerFiresOnBackgroundRefreshReset() throws IOException, InterruptedException {
         try (TestSupport.TestServer server = TestSupport.TestServer.start()) {
-            EnvpitClient client = TestSupport.newLoadedClient(server, "{\"K\":\"v0\"}");
+            EnvpitClient client = TestSupport.newLoadedClient(server, "{\"values\":{\"K\":\"v0\"},\"secretKeys\":[]}");
             try {
                 CountDownLatch latch = new CountDownLatch(1);
                 AtomicReference<EnvpitException> captured = new AtomicReference<>();
@@ -143,7 +143,7 @@ class ConnectionResetTest {
     @Test
     void selfHealsOnceTheConnectionStopsResetting() throws IOException {
         try (TestSupport.TestServer server = TestSupport.TestServer.start()) {
-            EnvpitClient client = TestSupport.newLoadedClient(server, "{\"K\":\"v0\"}");
+            EnvpitClient client = TestSupport.newLoadedClient(server, "{\"values\":{\"K\":\"v0\"},\"secretKeys\":[]}");
             try {
                 String resetHost = startResetListener();
                 client.host = resetHost;
@@ -152,7 +152,7 @@ class ConnectionResetTest {
                 assertNotNull(client.cacheInfo().lastError(), "expected the reset to be recorded as a failure first");
 
                 // Swap back to the healthy real server for recovery.
-                server.configHandler = TestSupport.fixedResponse(200, "{\"K\":\"v_recovered\"}");
+                server.configHandler = TestSupport.fixedResponse(200, "{\"values\":{\"K\":\"v_recovered\"},\"secretKeys\":[]}");
                 client.host = server.baseUrl;
                 client.httpClient = TestSupport.testHttpClient();
                 client.doRefresh(ChangeTrigger.POLL);

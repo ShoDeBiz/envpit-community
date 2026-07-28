@@ -75,6 +75,7 @@ Maven reactor — the two `pom.xml`s are independent, sibling, standalone POMs.
 | `envpit.host` | `https://envpit.com` | Override for self-hosted/local dev. |
 | `envpit.timeout` | `5s` | The one synchronous boot-time fetch's own request timeout (`60s`/`PT5S`-style — `DurationStyle`). |
 | `envpit.exclude-keys` | *(none)* | Comma-separated key names kept out of the `Environment` (e.g. `envpit.exclude-keys=DB_PASSWORD,JWT_SECRET`). |
+| `envpit.include-secrets` | `false` | Server-flagged secret keys (see "Secrets are excluded by default" below) are kept out of the `Environment` unless set to `true`. Naming this property is itself the acknowledgment — there is no second flag. |
 
 **Not supported: `envpit.project` / `envpit.environment`.** These appear in the SDK design spec's
 sample YAML (§12), but `EnvpitClient.Builder` has no `.project(...)`/`.environment(...)` — project
@@ -105,14 +106,17 @@ refresh (SSE) **cannot** reach a value already copied into the `Environment` thi
 values for specific keys, keep using the manual-bean approach below and read through
 `get()`/`onChange()` for those keys.
 
-**Secrets are not auto-excluded — today.** `GET /api/v1/config` (the endpoint every SDK language
-calls) returns a flat `key -> value` map with no `is_secret` flag on the wire — verified against
+**Secrets are excluded by default.** `GET /api/v1/config` (the endpoint every SDK language calls)
+returns an envelope, `{values, secretKeys}` — `secretKeys` names every `is_secret=true` key for
+this environment (verified against
 `apps/api/src/config-management/config-resolve.controller.ts`'s response schema in the main
-`envpit` repo. There is currently no signal to filter secrets out of `@Value`/`@ConfigurationProperties`
-automatically; use `envpit.exclude-keys` for any key you know is sensitive. `EnvpitClient.knownSecretKeys()`
-is a prepared extension point for once the server ships this metadata — until then it's always
-empty, by design, not approximated with a key-name heuristic (a heuristic is wrong in both
-directions: `DATABASE_URL` commonly embeds a password and wouldn't match one).
+`envpit` repo). `EnvpitClient.knownSecretKeys()` returns that real set, and this starter folds it
+into the excluded-key set alongside `envpit.exclude-keys` unless you deliberately opt in with
+`envpit.include-secrets=true` — no key-name heuristic is used (a heuristic would be wrong in both
+directions: `DATABASE_URL` commonly embeds a password and wouldn't match one). Opting in writes
+decrypted secret values into the Spring `Environment` (readable by `@Value`, actuator `/env` if
+exposed, and anything else that walks `Environment` property sources) — know your exposure before
+enabling it.
 
 **Actuator health/info contribution:** not implemented in this round, on purpose — flagged rather
 than built just because the design spec (§12) lists it. Reassess as a follow-up once there's an
@@ -162,9 +166,15 @@ envpit.onConnection(event -> ...);                      // ConnectionListener
 envpit.onError(event -> ...);                           // ErrorListener — always a typed EnvpitException
 
 CacheInfo info = envpit.cacheInfo();                    // fetchedAt / age / lastError / etag / refreshMode / ...
+Map<String, String> all = envpit.snapshot();            // defensive copy of every key -> value pair currently held
+Set<String> secrets = envpit.knownSecretKeys();         // server-flagged is_secret key NAMES for this environment
 sub.close();                                            // Subscription extends AutoCloseable
 envpit.close();                                         // EnvpitClient extends AutoCloseable — stops all background work
 ```
+
+`knownSecretKeys()` never changes what `get()`/`getInt()`/`getBoolean()` return for a secret key —
+they still resolve secret values by name like any other value. The filtering seam is
+`envpit-spring-boot-starter`'s native-environment merge (see that section above), not the getters.
 
 The builder's terminal method is `load()` — there is deliberately no public `build()`. This means
 there is no reachable state where you hold a client that hasn't completed its first fetch: `load()`

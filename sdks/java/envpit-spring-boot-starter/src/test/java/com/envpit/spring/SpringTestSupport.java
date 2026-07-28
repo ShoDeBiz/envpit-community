@@ -59,9 +59,19 @@ final class SpringTestSupport {
         }
     }
 
-    /** Same tiny fixture-only JSON encoder as {@code com.envpit.TestSupport#toJson} (flat string maps only). */
+    /**
+     * Same tiny fixture-only JSON encoder as {@code com.envpit.TestSupport#toJson} (flat string
+     * maps only) — bd:envpit-durd: wraps in the {@code {values, secretKeys}} envelope
+     * (test-vectors/resolve-body.json), with an empty secretKeys list. Use {@link
+     * #toEnvelopeJson} for a fixture that needs an explicit secretKeys set.
+     */
     static String toJson(Map<String, String> snapshot) {
-        StringBuilder sb = new StringBuilder("{");
+        return toEnvelopeJson(snapshot, java.util.Set.of());
+    }
+
+    /** The full post-bd:envpit-durd envelope, with an explicit secretKeys set. */
+    static String toEnvelopeJson(Map<String, String> snapshot, java.util.Collection<String> secretKeys) {
+        StringBuilder sb = new StringBuilder("{\"values\":{");
         boolean first = true;
         for (Map.Entry<String, String> e : snapshot.entrySet()) {
             if (!first) {
@@ -71,7 +81,17 @@ final class SpringTestSupport {
             sb.append(jsonString(e.getKey())).append(":");
             sb.append(e.getValue() == null ? "null" : jsonString(e.getValue()));
         }
-        return sb.append("}").toString();
+        sb.append("},\"secretKeys\":[");
+        first = true;
+        for (String key : secretKeys) {
+            if (!first) {
+                sb.append(",");
+            }
+            first = false;
+            sb.append(jsonString(key));
+        }
+        sb.append("]}");
+        return sb.toString();
     }
 
     private static String jsonString(String s) {

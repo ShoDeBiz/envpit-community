@@ -28,7 +28,7 @@ class ToStringRedactionTest {
     void clientToStringNeverContainsTheApiKeyOrAnyConfigValue() throws Exception {
         try (TestSupport.TestServer server = TestSupport.TestServer.start()) {
             server.configHandler = TestSupport.fixedResponse(200,
-                    "{\"DATABASE_URL\":\"" + ADVERSARIAL_SECRET_VALUE + "\",\"PORT\":\"8080\"}");
+                    "{\"values\":{\"DATABASE_URL\":\"" + ADVERSARIAL_SECRET_VALUE + "\",\"PORT\":\"8080\"},\"secretKeys\":[]}");
             EnvpitClient client = EnvpitClient.builder()
                     .apiKey(ADVERSARIAL_API_KEY)
                     .host(server.baseUrl)
@@ -52,7 +52,7 @@ class ToStringRedactionTest {
     @Test
     void realtimeTransportToStringNeverContainsTheApiKey() throws Exception {
         try (TestSupport.TestServer server = TestSupport.TestServer.start()) {
-            server.configHandler = TestSupport.fixedResponse(200, "{\"K\":\"v0\"}");
+            server.configHandler = TestSupport.fixedResponse(200, "{\"values\":{\"K\":\"v0\"},\"secretKeys\":[]}");
             // pollInterval > 0 so a RealtimeTransport instance is actually constructed.
             server.eventsHandler = TestSupport.fixedResponse(500, "");
             EnvpitClient client = EnvpitClient.builder()

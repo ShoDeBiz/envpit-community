@@ -56,7 +56,7 @@ class ConformanceTest {
     @Test
     void test_INV_SDK_1_load_itself_never_fires_a_change_event() throws Exception {
         try (TestSupport.TestServer server = TestSupport.TestServer.start()) {
-            EnvpitClient client = TestSupport.newLoadedClient(server, "{\"A\":\"1\"}");
+            EnvpitClient client = TestSupport.newLoadedClient(server, "{\"values\":{\"A\":\"1\"},\"secretKeys\":[]}");
             try {
                 AtomicInteger fired = new AtomicInteger(0);
                 client.onChange(e -> fired.incrementAndGet());
@@ -73,14 +73,14 @@ class ConformanceTest {
     @Test
     void test_INV_SDK_2_getters_after_load_never_trigger_a_network_call() throws Exception {
         try (TestSupport.TestServer server = TestSupport.TestServer.start()) {
-            EnvpitClient client = TestSupport.newLoadedClient(server, "{\"K\":\"v\"}"); // the ONE allowed fetch
+            EnvpitClient client = TestSupport.newLoadedClient(server, "{\"values\":{\"K\":\"v\"},\"secretKeys\":[]}"); // the ONE allowed fetch
             try {
                 // Install a call-counting handler AFTER load() — anything it observes from here on
                 // would have to come from a getter, which must never happen.
                 AtomicInteger callsAfterLoad = new AtomicInteger(0);
                 server.configHandler = ex -> {
                     callsAfterLoad.incrementAndGet();
-                    TestSupport.respond(ex, 200, "{\"K\":\"v\"}", null);
+                    TestSupport.respond(ex, 200, "{\"values\":{\"K\":\"v\"},\"secretKeys\":[]}", null);
                     return null;
                 };
 
@@ -135,7 +135,7 @@ class ConformanceTest {
     @Test
     void test_INV_SDK_4_stale_while_revalidate_keeps_last_good_snapshot_on_refresh_failure() throws Exception {
         try (TestSupport.TestServer server = TestSupport.TestServer.start()) {
-            EnvpitClient client = TestSupport.newLoadedClient(server, "{\"K\":\"v0\"}");
+            EnvpitClient client = TestSupport.newLoadedClient(server, "{\"values\":{\"K\":\"v0\"},\"secretKeys\":[]}");
             try {
                 server.configHandler = TestSupport.fixedResponse(500, "{}");
                 client.doRefresh(ChangeTrigger.POLL); // must not throw/propagate
@@ -156,7 +156,7 @@ class ConformanceTest {
     @Test
     void test_INV_SDK_5_rapid_concurrent_refresh_triggers_converge_to_the_freshest_server_state() throws Exception {
         try (TestSupport.TestServer server = TestSupport.TestServer.start()) {
-            server.configHandler = TestSupport.fixedResponse(200, "{\"K\":\"v0\"}");
+            server.configHandler = TestSupport.fixedResponse(200, "{\"values\":{\"K\":\"v0\"},\"secretKeys\":[]}");
             // handlePushSignal only funnels through the dispatch executor when it exists, i.e.
             // pollInterval > 0 (INV-SDK-8's OFF mode has none) — a hung realtime connect keeps the
             // BACKGROUND transport out of this test's way entirely (never itself calls back), so
@@ -166,7 +166,7 @@ class ConformanceTest {
                     .apiKey("epk_test").host(server.baseUrl).pollInterval(Duration.ofMinutes(10))
                     .httpClient(TestSupport.testHttpClient()).logger(null).load();
             try {
-                server.configHandler = TestSupport.fixedResponse(200, "{\"K\":\"v_final\"}");
+                server.configHandler = TestSupport.fixedResponse(200, "{\"values\":{\"K\":\"v_final\"},\"secretKeys\":[]}");
 
                 // Fire a burst of overlapping refresh triggers (push signals with distinct etags,
                 // so none is deduped) — all funnel through the SAME single dispatch executor
@@ -192,7 +192,7 @@ class ConformanceTest {
     void test_INV_SDK_6_a_throwing_change_listener_never_blocks_delivery_to_other_listeners() throws Exception {
         try (TestSupport.TestServer server = TestSupport.TestServer.start()) {
             TestSupport.CapturingLogger logger = new TestSupport.CapturingLogger();
-            server.configHandler = TestSupport.fixedResponse(200, "{\"K\":\"v0\"}");
+            server.configHandler = TestSupport.fixedResponse(200, "{\"values\":{\"K\":\"v0\"},\"secretKeys\":[]}");
             EnvpitClient client = EnvpitClient.builder()
                     .apiKey("epk_test").host(server.baseUrl).pollInterval(Duration.ZERO)
                     .httpClient(TestSupport.testHttpClient()).logger(logger).load();
@@ -203,7 +203,7 @@ class ConformanceTest {
                 });
                 client.onChange(e -> healthyRan.incrementAndGet());
 
-                server.configHandler = TestSupport.fixedResponse(200, "{\"K\":\"v1\"}");
+                server.configHandler = TestSupport.fixedResponse(200, "{\"values\":{\"K\":\"v1\"},\"secretKeys\":[]}");
                 client.doRefresh(ChangeTrigger.POLL); // must not throw out of this call
 
                 assertEquals(1, healthyRan.get());
@@ -219,7 +219,7 @@ class ConformanceTest {
     @Test
     void test_INV_SDK_7_change_payload_is_key_names_only_sorted_and_snapshot_applied_before_delivery() throws Exception {
         try (TestSupport.TestServer server = TestSupport.TestServer.start()) {
-            EnvpitClient client = TestSupport.newLoadedClient(server, "{\"A\":\"before\"}");
+            EnvpitClient client = TestSupport.newLoadedClient(server, "{\"values\":{\"A\":\"before\"},\"secretKeys\":[]}");
             try {
                 CountDownLatch latch = new CountDownLatch(1);
                 AtomicReference<ChangeEvent> received = new AtomicReference<>();
@@ -230,7 +230,7 @@ class ConformanceTest {
                     latch.countDown();
                 });
 
-                server.configHandler = TestSupport.fixedResponse(200, "{\"A\":\"after\",\"B\":\"new\"}");
+                server.configHandler = TestSupport.fixedResponse(200, "{\"values\":{\"A\":\"after\",\"B\":\"new\"},\"secretKeys\":[]}");
                 client.doRefresh(ChangeTrigger.POLL);
 
                 assertTrue(latch.await(2, TimeUnit.SECONDS));
@@ -246,12 +246,12 @@ class ConformanceTest {
     @Test
     void test_INV_SDK_7_no_change_event_fires_when_nothing_differs() throws Exception {
         try (TestSupport.TestServer server = TestSupport.TestServer.start()) {
-            EnvpitClient client = TestSupport.newLoadedClient(server, "{\"A\":\"1\"}");
+            EnvpitClient client = TestSupport.newLoadedClient(server, "{\"values\":{\"A\":\"1\"},\"secretKeys\":[]}");
             try {
                 AtomicInteger fired = new AtomicInteger(0);
                 client.onChange(e -> fired.incrementAndGet());
 
-                server.configHandler = TestSupport.fixedResponse(200, "{\"A\":\"1\"}"); // byte-identical content
+                server.configHandler = TestSupport.fixedResponse(200, "{\"values\":{\"A\":\"1\"},\"secretKeys\":[]}"); // byte-identical content
                 client.doRefresh(ChangeTrigger.POLL);
 
                 assertEquals(0, fired.get());
@@ -266,7 +266,7 @@ class ConformanceTest {
     @Test
     void test_INV_SDK_8_poll_interval_zero_disables_all_background_refresh_including_realtime() throws Exception {
         try (TestSupport.TestServer server = TestSupport.TestServer.start()) {
-            EnvpitClient client = TestSupport.newLoadedClient(server, "{\"K\":\"v\"}"); // pollInterval = ZERO
+            EnvpitClient client = TestSupport.newLoadedClient(server, "{\"values\":{\"K\":\"v\"},\"secretKeys\":[]}"); // pollInterval = ZERO
             try {
                 assertEquals(RefreshMode.OFF, client.cacheInfo().refreshMode());
                 assertNull(client.realtimeTransport, "expected no realtime transport at all when poll interval is 0");
@@ -284,7 +284,7 @@ class ConformanceTest {
             AtomicInteger calls = new AtomicInteger(0);
             server.configHandler = ex -> {
                 calls.incrementAndGet();
-                TestSupport.respond(ex, 200, "{\"K\":\"v0\"}", "same-etag");
+                TestSupport.respond(ex, 200, "{\"values\":{\"K\":\"v0\"},\"secretKeys\":[]}", "same-etag");
                 return null;
             };
             // pollInterval > 0 (a live dispatch executor) so this is a MEANINGFUL negative
@@ -319,7 +319,7 @@ class ConformanceTest {
             AtomicInteger calls = new AtomicInteger(0);
             server.configHandler = ex -> {
                 int n = calls.incrementAndGet();
-                TestSupport.respond(ex, 200, n == 1 ? "{\"K\":\"v0\"}" : "{\"K\":\"v1\"}", null);
+                TestSupport.respond(ex, 200, n == 1 ? "{\"values\":{\"K\":\"v0\"},\"secretKeys\":[]}" : "{\"values\":{\"K\":\"v1\"},\"secretKeys\":[]}", null);
                 return null;
             };
             // pollInterval > 0 so a dispatch executor exists at all (handleConnectionModeChange is
@@ -352,7 +352,7 @@ class ConformanceTest {
     @Test
     void test_INV_SDK_10_a_single_disconnect_gets_one_silent_retry_before_any_log_line_or_event() throws Exception {
         try (TestSupport.TestServer server = TestSupport.TestServer.start()) {
-            server.configHandler = TestSupport.fixedResponse(200, "{\"K\":\"v0\"}");
+            server.configHandler = TestSupport.fixedResponse(200, "{\"values\":{\"K\":\"v0\"},\"secretKeys\":[]}");
             server.eventsHandler = TestSupport.fixedResponse(500, "");
             TestSupport.CapturingLogger logger = new TestSupport.CapturingLogger();
             EnvpitClient client = EnvpitClient.builder()
@@ -395,7 +395,7 @@ class ConformanceTest {
     @Test
     void test_INV_SDK_11_background_work_runs_on_daemon_threads_and_never_blocks_process_exit() throws Exception {
         try (TestSupport.TestServer server = TestSupport.TestServer.start()) {
-            server.configHandler = TestSupport.fixedResponse(200, "{\"K\":\"v0\"}");
+            server.configHandler = TestSupport.fixedResponse(200, "{\"values\":{\"K\":\"v0\"},\"secretKeys\":[]}");
             server.eventsHandler = TestSupport.fixedResponse(500, "");
             EnvpitClient client = EnvpitClient.builder()
                     .apiKey("epk_test").host(server.baseUrl).pollInterval(Duration.ofSeconds(30))
@@ -426,7 +426,7 @@ class ConformanceTest {
             AtomicReference<String> seenApiKeyHeader = new AtomicReference<>();
             server.configHandler = ex -> {
                 seenApiKeyHeader.set(ex.getRequestHeaders().getFirst("X-Api-Key"));
-                TestSupport.respond(ex, 200, "{}", null);
+                TestSupport.respond(ex, 200, "{\"values\":{},\"secretKeys\":[]}", null);
                 return null;
             };
             EnvpitClient client = EnvpitClient.builder()
@@ -453,7 +453,7 @@ class ConformanceTest {
             server.configHandler = ex -> {
                 xApiKey.set(ex.getRequestHeaders().getFirst("X-Api-Key"));
                 authorization.set(ex.getRequestHeaders().getFirst("Authorization"));
-                TestSupport.respond(ex, 200, "{}", null);
+                TestSupport.respond(ex, 200, "{\"values\":{},\"secretKeys\":[]}", null);
                 return null;
             };
             EnvpitClient client = EnvpitClient.builder()

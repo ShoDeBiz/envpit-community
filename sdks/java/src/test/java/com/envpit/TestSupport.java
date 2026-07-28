@@ -246,8 +246,37 @@ final class TestSupport {
     }
 
     // ---- tiny test-only JSON encoder (fixtures only — flat string maps) ---------------------
+    //
+    // bd:envpit-durd: the wire shape is now the ENVELOPE, {values, secretKeys}, not a bare map
+    // (test-vectors/resolve-body.json) — every canned response this suite hands to a real local
+    // TestServer must be an envelope or the strict Transport.fetchConfig parser rejects it as a
+    // legacy bare map. `toJson` below wraps with an empty secretKeys list (the overwhelming
+    // majority of this suite's fixtures don't care about secret labelling at all); tests that DO
+    // care call `toEnvelopeJson` directly with an explicit secretKeys set.
 
-    static String toJson(Map<String, String> snapshot) {
+    /** Common case: a values-only fixture, no secrets. */
+    static String toJson(Map<String, String> values) {
+        return toEnvelopeJson(values, java.util.Set.of());
+    }
+
+    /** The full post-bd:envpit-durd envelope, with an explicit secretKeys set. */
+    static String toEnvelopeJson(Map<String, String> values, java.util.Collection<String> secretKeys) {
+        StringBuilder sb = new StringBuilder("{\"values\":");
+        sb.append(valuesJson(values));
+        sb.append(",\"secretKeys\":[");
+        boolean first = true;
+        for (String key : secretKeys) {
+            if (!first) {
+                sb.append(",");
+            }
+            first = false;
+            sb.append(jsonString(key));
+        }
+        sb.append("]}");
+        return sb.toString();
+    }
+
+    private static String valuesJson(Map<String, String> snapshot) {
         StringBuilder sb = new StringBuilder("{");
         boolean first = true;
         for (Map.Entry<String, String> e : snapshot.entrySet()) {
@@ -259,6 +288,60 @@ final class TestSupport {
             sb.append(e.getValue() == null ? "null" : jsonString(e.getValue()));
         }
         return sb.append("}").toString();
+    }
+
+    /**
+     * Generic re-encoder for arbitrary already-PARSED JSON structures ({@link Map}/{@link List}/
+     * {@link String}/{@link Double}/{@link Boolean}/{@code null} — exactly {@link Json#parse}'s
+     * own output shapes) back into literal wire text. Needed because
+     * test-vectors/resolve-body.json's {@code body} field is itself parsed JSON (a nested object,
+     * not a pre-serialized string like {@code adversarial-payloads.json}'s fixtures are) — this
+     * turns it back into text to feed a real {@link TestServer}. Dogfoods this SDK's own {@link
+     * Json} parser's output contract, run in reverse.
+     */
+    @SuppressWarnings("unchecked")
+    static String encodeJson(Object value) {
+        if (value == null) {
+            return "null";
+        }
+        if (value instanceof String s) {
+            return jsonString(s);
+        }
+        if (value instanceof Boolean b) {
+            return b.toString();
+        }
+        if (value instanceof Number n) {
+            double d = n.doubleValue();
+            if (d == Math.rint(d) && !Double.isInfinite(d)) {
+                return Long.toString((long) d);
+            }
+            return Double.toString(d);
+        }
+        if (value instanceof Map<?, ?> m) {
+            StringBuilder sb = new StringBuilder("{");
+            boolean first = true;
+            for (Map.Entry<?, ?> e : m.entrySet()) {
+                if (!first) {
+                    sb.append(",");
+                }
+                first = false;
+                sb.append(jsonString(String.valueOf(e.getKey()))).append(":").append(encodeJson(e.getValue()));
+            }
+            return sb.append("}").toString();
+        }
+        if (value instanceof List<?> l) {
+            StringBuilder sb = new StringBuilder("[");
+            boolean first = true;
+            for (Object o : l) {
+                if (!first) {
+                    sb.append(",");
+                }
+                first = false;
+                sb.append(encodeJson(o));
+            }
+            return sb.append("]").toString();
+        }
+        throw new IllegalArgumentException("encodeJson: unsupported type " + value.getClass());
     }
 
     static String jsonString(String s) {

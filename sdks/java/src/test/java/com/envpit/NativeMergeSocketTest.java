@@ -23,23 +23,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *       neither is reachable from {@code com.envpit.spring}. This IS the Java equivalent of
  *       Python's {@code EnvpitClient.snapshot()} (client.py, same bd), added for the identical
  *       reason.</li>
- *   <li>{@link EnvpitClient#knownSecretKeys()} — the "prepared socket" Oliver asked for
- *       (2026-07-28 correction on bd:envpit-yvyr) once the wire protocol adds per-key secret
- *       metadata. ALWAYS empty today: {@code GET /api/v1/config} ({@link Transport}) returns a
- *       flat {@code key -> value} map with no {@code is_secret} field at all — independently
- *       verified against {@code apps/api/src/config-management/config-resolve.controller.ts}'s
- *       documented response schema ({@code additionalProperties: {type: 'string', nullable:
- *       true}}) and {@code ConfigService.resolveEnvironmentSecretsInternal}'s {@code
- *       Record<string, string | null>} return type in the main {@code envpit} repo — the exact
- *       same evidence chain Python's {@code client.py:_known_secret_keys()} and Node's {@code
- *       process-env-merge.ts} independently cite. NOT a placeholder for a key-name heuristic
- *       (e.g. matching {@code SECRET}/{@code PASSWORD}/{@code TOKEN}) — a heuristic is wrong in
- *       both directions: {@code DATABASE_URL} commonly embeds a password and would slip straight
- *       past any such pattern. The day the wire protocol ships {@code secretKeys}, only this
- *       method's body changes; every caller in {@code envpit-spring-boot-starter} already folds
- *       its result into the excluded-keys set unconditionally (mirrors Python's
- *       {@code populate_environ}/{@code integrations/flask.py}/{@code integrations/django.py}
- *       call sites).</li>
+ *   <li>{@link EnvpitClient#knownSecretKeys()} — bd:envpit-durd closed the protocol gap this
+ *       method used to be a placeholder for: {@code GET /api/v1/config} ({@link Transport}) now
+ *       returns an envelope, {@code {values, secretKeys}} (test-vectors/resolve-body.json), and
+ *       this method returns the real, server-reported {@code secretKeys} set from the last fetch
+ *       — independently verified against {@code
+ *       apps/api/src/config-management/config-resolve.controller.ts}'s current {@code
+ *       @ApiResponse} schema in the main {@code envpit} repo. Same wire contract Python's {@code
+ *       client.py:_known_secret_keys()} and Node's {@code process-env-merge.ts} read. NOT a
+ *       key-name heuristic (e.g. matching {@code SECRET}/{@code PASSWORD}/{@code TOKEN}) — this is
+ *       the real, server-reported flag. Every caller in {@code envpit-spring-boot-starter} already
+ *       folds its result into the excluded-keys set (unless a deployment opts in via
+ *       {@code envpit.include-secrets}), mirroring Python's {@code populate_environ}/{@code
+ *       integrations/flask.py}/{@code integrations/django.py} call sites.</li>
  * </ol>
  */
 class NativeMergeSocketTest {
@@ -102,11 +98,67 @@ class NativeMergeSocketTest {
     }
 
     @Test
-    void knownSecretKeysIsAlwaysEmptyTodayProtocolGap() {
-        EnvpitClient client = TestSupport.newLoadedClient(server, TestSupport.toJson(Map.of("DB_PASSWORD", "hunter2")));
+    void knownSecretKeysReturnsTheRealServerProvidedSecretKeySet() {
+        Map<String, String> body = new java.util.LinkedHashMap<>();
+        body.put("DB_PASSWORD", "hunter2");
+        body.put("API_URL", "https://api.example.com");
+        String json = TestSupport.toEnvelopeJson(body, Set.of("DB_PASSWORD"));
+        EnvpitClient client = TestSupport.newLoadedClient(server, json);
         try {
             Set<String> secretKeys = client.knownSecretKeys();
-            assertTrue(secretKeys.isEmpty(), "no per-key is_secret signal exists on the wire yet");
+            assertEquals(Set.of("DB_PASSWORD"), secretKeys);
+            // knownSecretKeys() is a NAMES-only signal — the getters are unchanged and still
+            // return the secret's real value by key.
+            assertEquals("hunter2", client.get("DB_PASSWORD"));
+        } finally {
+            client.close();
+        }
+    }
+
+    @Test
+    void knownSecretKeysIsEmptyWhenTheEnvironmentHasNoSecrets() {
+        EnvpitClient client = TestSupport.newLoadedClient(server, TestSupport.toJson(Map.of("API_URL", "https://api.example.com")));
+        try {
+            assertTrue(client.knownSecretKeys().isEmpty(), "no secretKeys reported by the server for this environment");
+        } finally {
+            client.close();
+        }
+    }
+
+    @Test
+    void knownSecretKeysStillListsAnUnsetSecretByName() {
+        // resolve-body.json's "unset-secret-is-still-listed": the flag is key-level, not
+        // value-level — a secret key with a null value in this environment still appears here.
+        Map<String, String> body = new java.util.LinkedHashMap<>();
+        body.put("DB_PASSWORD", null);
+        String json = TestSupport.toEnvelopeJson(body, Set.of("DB_PASSWORD"));
+        EnvpitClient client = TestSupport.newLoadedClient(server, json);
+        try {
+            assertEquals(Set.of("DB_PASSWORD"), client.knownSecretKeys());
+        } finally {
+            client.close();
+        }
+    }
+
+    @Test
+    void knownSecretKeysUpdatesAfterABackgroundRefreshChangesTheSecretSet() {
+        Map<String, String> initial = new java.util.LinkedHashMap<>();
+        initial.put("DB_PASSWORD", "hunter2");
+        server.configHandler = TestSupport.fixedResponse(200, TestSupport.toEnvelopeJson(initial, Set.of("DB_PASSWORD")));
+        EnvpitClient client = EnvpitClient.builder()
+                .apiKey("epk_test").host(server.baseUrl).pollInterval(java.time.Duration.ZERO)
+                .httpClient(TestSupport.testHttpClient()).logger(null).load();
+        try {
+            assertEquals(Set.of("DB_PASSWORD"), client.knownSecretKeys());
+
+            Map<String, String> rotated = new java.util.LinkedHashMap<>();
+            rotated.put("DB_PASSWORD", "hunter2");
+            rotated.put("JWT_SECRET", "s3cr3t");
+            server.configHandler = TestSupport.fixedResponse(200,
+                    TestSupport.toEnvelopeJson(rotated, Set.of("DB_PASSWORD", "JWT_SECRET")));
+            client.doRefresh(ChangeTrigger.POLL);
+
+            assertEquals(Set.of("DB_PASSWORD", "JWT_SECRET"), client.knownSecretKeys());
         } finally {
             client.close();
         }

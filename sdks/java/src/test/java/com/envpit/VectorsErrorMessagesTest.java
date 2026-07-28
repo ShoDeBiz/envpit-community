@@ -198,7 +198,7 @@ class VectorsErrorMessagesTest {
     private Result backgroundRefreshFailedHttp500() {
         try (TestSupport.TestServer server = TestSupport.TestServer.start()) {
             TestSupport.CapturingLogger logger = new TestSupport.CapturingLogger();
-            server.configHandler = TestSupport.fixedResponse(200, "{\"K\":\"v0\"}");
+            server.configHandler = TestSupport.fixedResponse(200, "{\"values\":{\"K\":\"v0\"},\"secretKeys\":[]}");
             EnvpitClient client = EnvpitClient.builder()
                     .apiKey("epk_test").host(server.baseUrl).pollInterval(Duration.ZERO)
                     .httpClient(TestSupport.testHttpClient()).logger(logger).load();

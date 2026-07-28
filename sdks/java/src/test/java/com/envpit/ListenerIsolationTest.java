@@ -23,7 +23,7 @@ class ListenerIsolationTest {
     void aThrowingChangeListenerDoesNotPreventTheNextListenerFromRunningAndIsLogged() throws Exception {
         try (TestSupport.TestServer server = TestSupport.TestServer.start()) {
             TestSupport.CapturingLogger logger = new TestSupport.CapturingLogger();
-            server.configHandler = TestSupport.fixedResponse(200, "{\"K\":\"v0\"}");
+            server.configHandler = TestSupport.fixedResponse(200, "{\"values\":{\"K\":\"v0\"},\"secretKeys\":[]}");
             EnvpitClient client = EnvpitClient.builder()
                     .apiKey("epk_test").host(server.baseUrl).pollInterval(Duration.ZERO)
                     .httpClient(TestSupport.testHttpClient()).logger(logger).load();
@@ -37,7 +37,7 @@ class ListenerIsolationTest {
                 client.onChange(e -> secondListenerCalls.incrementAndGet());
                 client.onChange(e -> thirdListenerCalls.incrementAndGet());
 
-                server.configHandler = TestSupport.fixedResponse(200, "{\"K\":\"v1\"}");
+                server.configHandler = TestSupport.fixedResponse(200, "{\"values\":{\"K\":\"v1\"},\"secretKeys\":[]}");
                 client.doRefresh(ChangeTrigger.POLL);
 
                 assertEquals(1, secondListenerCalls.get(), "the second listener must still run after the first threw");
@@ -56,7 +56,7 @@ class ListenerIsolationTest {
     void multipleThrowingListenersEachGetLoggedAndTheHealthyOneStillRuns() throws Exception {
         try (TestSupport.TestServer server = TestSupport.TestServer.start()) {
             TestSupport.CapturingLogger logger = new TestSupport.CapturingLogger();
-            server.configHandler = TestSupport.fixedResponse(200, "{\"K\":\"v0\"}");
+            server.configHandler = TestSupport.fixedResponse(200, "{\"values\":{\"K\":\"v0\"},\"secretKeys\":[]}");
             EnvpitClient client = EnvpitClient.builder()
                     .apiKey("epk_test").host(server.baseUrl).pollInterval(Duration.ZERO)
                     .httpClient(TestSupport.testHttpClient()).logger(logger).load();
@@ -70,7 +70,7 @@ class ListenerIsolationTest {
                     throw new RuntimeException("third");
                 });
 
-                server.configHandler = TestSupport.fixedResponse(200, "{\"K\":\"v1\"}");
+                server.configHandler = TestSupport.fixedResponse(200, "{\"values\":{\"K\":\"v1\"},\"secretKeys\":[]}");
                 client.doRefresh(ChangeTrigger.POLL);
 
                 assertEquals(1, healthyCalls.get());

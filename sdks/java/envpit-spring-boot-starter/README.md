@@ -1,10 +1,12 @@
 # envpit-spring-boot-starter
 
-Spring Boot integration for the [EnvPit](https://envpit.com) Java SDK — bd:envpit-yvyr. A separate
-Maven artifact from `envpit-sdk` (this module's sibling `../pom.xml`), so the core SDK stays
-zero-runtime-dependency; see that module's own README, "Using Spring Boot? `@Value` and
-`@ConfigurationProperties` just work", for the full properties table, precedence rules, and
-documented limitations (boot-time-snapshot-only, no automatic secret exclusion yet).
+Spring Boot integration for the [EnvPit](https://envpit.com) Java SDK — bd:envpit-yvyr /
+bd:envpit-durd. A separate Maven artifact from `envpit-sdk` (this module's sibling `../pom.xml`),
+so the core SDK stays zero-runtime-dependency; see that module's own README, "Using Spring Boot?
+`@Value` and `@ConfigurationProperties` just work", for the full properties table, precedence
+rules, and documented limitations (boot-time-snapshot-only). Server-flagged secret keys
+(`EnvpitClient.knownSecretKeys()`) are excluded from the `Environment` by default — opt in with
+`envpit.include-secrets=true`.
 
 ```xml
 <dependency>

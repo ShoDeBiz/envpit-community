@@ -107,7 +107,7 @@ class CloseCancelsScheduledTasksTest {
     @Test
     void clientCloseLeavesNoLiveExecutorAndNoGhostCallback() throws Exception {
         try (TestSupport.TestServer server = TestSupport.TestServer.start()) {
-            server.configHandler = TestSupport.fixedResponse(200, "{\"K\":\"v0\"}");
+            server.configHandler = TestSupport.fixedResponse(200, "{\"values\":{\"K\":\"v0\"},\"secretKeys\":[]}");
             server.eventsHandler = TestSupport.fixedResponse(500, "");
 
             TestSupport.CapturingLogger logger = new TestSupport.CapturingLogger();
