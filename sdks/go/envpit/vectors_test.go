@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -15,7 +16,7 @@ import (
 	"time"
 )
 
-// This file consumes all 8 shared test-vectors/ families (suiteVersion 1.1.0), proving Go
+// This file consumes all 10 shared test-vectors/ families (suiteVersion 1.2.0), proving Go
 // behaves identically to shipped Node/Python against the SAME canonical fixtures rather than
 // prose ported by hand. See test-vectors/README.md for the family list and
 // test-vectors/CONFORMANCE.md for the (separate, non-data) behavioral invariant checklist
@@ -652,11 +653,18 @@ func TestVectorsAdversarialPayloads(t *testing.T) {
 }
 
 // buildPaddedJSONObject matches test-vectors/adversarial-payloads.json's documented recipe:
-// "json-object-single-key-K-padded-string" — {"K": "` + ('v' * N) + `"} sized to exactly
-// totalBytes.
+// "envelope-single-key-K-padded-string" — {"values":{"K":"vvv...v"},"secretKeys":[]} sized to
+// exactly totalBytes. The skeleton is inlined rather than reusing envelopeBody purely for exact
+// byte-count control.
+//
+// The recipe was a BARE {"K": pad} map until bd:envpit-durd turned that into the rejected
+// legacy shape (resolve-body.json's legacy-bare-map-is-rejected), which made this file's one
+// "accept" case unsatisfiable by any conforming client. Flagging it upstream rather than only
+// patching here was the right call: the shared vector's recipe was corrected, so all four
+// languages build the same body again instead of each carrying a private workaround.
 func buildPaddedJSONObject(totalBytes int) string {
-	const prefix = `{"K":"`
-	const suffix = `"}`
+	const prefix = `{"values":{"K":"`
+	const suffix = `"},"secretKeys":[]}`
 	padLen := totalBytes - len(prefix) - len(suffix)
 	if padLen < 0 {
 		padLen = 0
@@ -696,6 +704,189 @@ func runWithTimeout(t *testing.T, timeout time.Duration, fn func()) {
 		}
 	case <-time.After(timeout):
 		t.Fatalf("fn did not return within %v (hang, not memory/crash-safe)", timeout)
+	}
+}
+
+// ---- 9. resolve-body.json (bd:envpit-durd, suiteVersion 1.2.0) -------------------------------
+
+// TestVectorsResolveBody drives fetchConfig itself (not a hand-rolled envelope-unwrap helper) —
+// this family's whole point is proving the transport layer's wire-parsing behavior against the
+// SAME body bytes a real server would send, happy-path and rejected alike.
+func TestVectorsResolveBody(t *testing.T) {
+	var doc struct {
+		Cases []struct {
+			Name     string          `json:"name"`
+			Body     json.RawMessage `json:"body"`
+			Expected *struct {
+				Values     map[string]*string `json:"values"`
+				SecretKeys []string           `json:"secretKeys"`
+			} `json:"expected"`
+			ExpectedError string `json:"expectedError"`
+		} `json:"cases"`
+	}
+	loadVectors(t, "resolve-body.json", &doc)
+
+	for _, c := range doc.Cases {
+		c := c
+		t.Run(c.Name, func(t *testing.T) {
+			rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				return jsonResponse(200, string(c.Body)), nil
+			})
+			ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+			defer cancel()
+			result, err := fetchConfig(ctx, &http.Client{Transport: rt}, "https://example.test", "epk_test")
+
+			if c.ExpectedError != "" {
+				if err == nil {
+					t.Fatalf("expected %s, got no error (values=%v secretKeys=%v)", c.ExpectedError, result.snapshot, result.secretKeys)
+				}
+				if !errorTypeNameMatches(err, c.ExpectedError) {
+					t.Fatalf("expected %s, got %T: %v", c.ExpectedError, err, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			assertSnapshotValuesEqual(t, result.snapshot, ConfigSnapshot(c.Expected.Values))
+			assertStringSliceEqual(t, "secretKeys", result.secretKeys, c.Expected.SecretKeys)
+		})
+	}
+}
+
+// assertSnapshotValuesEqual compares two ConfigSnapshot maps by key set + dereferenced value —
+// *string pointer identity is never what any of these vectors care about.
+func assertSnapshotValuesEqual(t *testing.T, got, want ConfigSnapshot) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("values = %s, want %s", describeSnapshot(got), describeSnapshot(want))
+	}
+	for k, wantV := range want {
+		gotV, ok := got[k]
+		if !ok {
+			t.Fatalf("values missing key %q: got %s, want %s", k, describeSnapshot(got), describeSnapshot(want))
+		}
+		if (wantV == nil) != (gotV == nil) {
+			t.Fatalf("values[%q] nil-ness mismatch: got %s, want %s", k, describeSnapshot(got), describeSnapshot(want))
+		}
+		if wantV != nil && *wantV != *gotV {
+			t.Fatalf("values[%q] = %q, want %q", k, *gotV, *wantV)
+		}
+	}
+}
+
+func describeSnapshot(s ConfigSnapshot) string {
+	out := make(map[string]string, len(s))
+	for k, v := range s {
+		if v == nil {
+			out[k] = "<nil>"
+			continue
+		}
+		out[k] = *v
+	}
+	return fmt.Sprintf("%v", out)
+}
+
+// assertStringSliceEqual asserts exact positional equality (every vector in this suite that
+// specifies an ordered string list already gives it in the exact order the SDK must reproduce —
+// see resolve-body.json's secretKeys and env-merge.json's three result lists, both documented
+// "SORTED, values-free key-name lists" at the SOURCE, not re-sorted by the test).
+func assertStringSliceEqual(t *testing.T, label string, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("%s = %v, want %v", label, got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Fatalf("%s = %v, want %v", label, got, want)
+		}
+	}
+}
+
+// ---- 10. env-merge.json (bd:envpit-durd + bd:envpit-yvyr, suiteVersion 1.2.0) -----------------
+
+// TestVectorsEnvMerge drives the REAL Client.MergeIntoEnv (not a reimplementation of the merge
+// algorithm) against every shared case. Each case's snapshot/existing key names are remapped to
+// a per-case-namespaced prefix before touching the real process environment — same discipline as
+// env_test.go's envKeyCounter, applied to a whole case's key set at once via a single common
+// prefix (which preserves the vectors' documented alphabetical sort order under remapping,
+// because Go string comparison of two equally-prefixed strings reduces to comparing the
+// unprefixed suffixes).
+func TestVectorsEnvMerge(t *testing.T) {
+	var doc struct {
+		Cases []struct {
+			Name     string `json:"name"`
+			Snapshot struct {
+				Values     map[string]*string `json:"values"`
+				SecretKeys []string           `json:"secretKeys"`
+			} `json:"snapshot"`
+			Existing map[string]string `json:"existing"`
+			Options  struct {
+				IncludeSecrets bool `json:"includeSecrets"`
+				Override       bool `json:"override"`
+			} `json:"options"`
+			Expected struct {
+				Merged          []string `json:"merged"`
+				SkippedExisting []string `json:"skippedExisting"`
+				SkippedSecrets  []string `json:"skippedSecrets"`
+			} `json:"expected"`
+		} `json:"cases"`
+	}
+	loadVectors(t, "env-merge.json", &doc)
+
+	for _, c := range doc.Cases {
+		c := c
+		t.Run(c.Name, func(t *testing.T) {
+			envKeyCounter++
+			prefix := fmt.Sprintf("ENVPIT_MERGE_VECTOR_%d_", envKeyCounter)
+			ns := func(key string) string { return prefix + key }
+			nsList := func(keys []string) []string {
+				out := make([]string, len(keys))
+				for i, k := range keys {
+					out[i] = ns(k)
+				}
+				return out
+			}
+
+			nsValues := make(map[string]*string, len(c.Snapshot.Values))
+			var cleanupKeys []string
+			for k, v := range c.Snapshot.Values {
+				nsValues[ns(k)] = v
+				cleanupKeys = append(cleanupKeys, ns(k))
+			}
+			for k, v := range c.Existing {
+				key := ns(k)
+				cleanupKeys = append(cleanupKeys, key)
+				if err := os.Setenv(key, v); err != nil {
+					t.Fatalf("test setup Setenv(%s) failed: %v", key, err)
+				}
+			}
+			t.Cleanup(func() {
+				for _, k := range cleanupKeys {
+					os.Unsetenv(k)
+				}
+			})
+
+			client := newLoadedClient(t, `{}`)
+			client.mu.Lock()
+			client.snapshot = ConfigSnapshot(nsValues)
+			client.secretKeys = nsList(c.Snapshot.SecretKeys)
+			client.mu.Unlock()
+
+			var opts []MergeOption
+			if c.Options.Override {
+				opts = append(opts, WithOverride())
+			}
+			if c.Options.IncludeSecrets {
+				opts = append(opts, WithIncludeSecrets())
+			}
+
+			result := client.MergeIntoEnv(opts...)
+
+			assertStringSliceEqual(t, "Merged", result.Merged, nsList(c.Expected.Merged))
+			assertStringSliceEqual(t, "SkippedExisting", result.SkippedExisting, nsList(c.Expected.SkippedExisting))
+			assertStringSliceEqual(t, "SkippedSecrets", result.SkippedSecrets, nsList(c.Expected.SkippedSecrets))
+		})
 	}
 }
 

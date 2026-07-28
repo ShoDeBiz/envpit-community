@@ -94,6 +94,9 @@ func Cache() CacheInfo { return requireDefault().CacheInfo() }
 // secret-filtering contract.
 func MergeIntoEnv(opts ...MergeOption) MergeResult { return requireDefault().MergeIntoEnv(opts...) }
 
+// SecretKeys delegates to the package-level default client's SecretKeys.
+func SecretKeys() []string { return requireDefault().SecretKeys() }
+
 // Close closes and clears the package-level default client, if one is set. Unlike the other
 // package-level functions, Close is a no-op (not a panic) when no default client is set.
 func Close() {

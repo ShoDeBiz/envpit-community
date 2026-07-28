@@ -67,29 +67,30 @@ set. Pass `envpit.WithOverride()` to invert that.
 ```go
 result := client.MergeIntoEnv(
     envpit.WithOverride(),        // EnvPit wins over an existing os.Environ value
+    // envpit.WithIncludeSecrets(),        // opt in to writing secret-flagged values too (see below)
     envpit.WithOnly("PORT", "API_URL"), // merge ONLY these keys — see "Secrets" below
     // envpit.WithExclude("INTERNAL_DEBUG_FLAG"), // or: merge everything EXCEPT these
 )
-fmt.Println(result.Set, result.Skipped, result.Errors) // deterministic, sorted; Errors is
-                                                          // nil unless an os.Setenv call itself
-                                                          // failed (e.g. a NUL byte in a value)
+fmt.Println(result.Merged, result.SkippedExisting, result.SkippedSecrets, result.Errors)
+// all three lists deterministic/sorted; Errors is nil unless an os.Setenv call itself
+// failed (e.g. a NUL byte in a value)
 ```
 
-> ⚠️ **Secrets are NOT filtered by `MergeIntoEnv` today.** `GET /api/v1/config` (the one
-> endpoint this SDK ever calls) returns a flat `{key: value}` map with every secret-flagged
-> value already decrypted server-side and mixed in indistinguishably from plain config — the
-> wire protocol carries no per-key `isSecret` flag for any language's SDK to filter on
-> (verified against `apps/api/src/config-management/config.service.ts`'s
-> `resolveEnvironmentSecretsInternal`, which reads and then discards each row's own
-> `isSecret` flag before responding, and against the frozen cross-language
-> `test-vectors/snapshot-diff.json` shape, which has no such field). Calling
-> `MergeIntoEnv()` bare therefore writes **every** resolved value — including decrypted
-> secrets — into the real process environment, which is inherited by every child process and
-> commonly captured whole by crash reporters/APM agents. Until the server sends a secret flag
-> (tracked: bd:envpit-yvyr), the only available protection is `WithOnly`/`WithExclude` with an
-> explicit key list **you** supply from your own schema — the SDK deliberately does not guess
-> from key names (`DATABASE_URL` embedding a password does not match any naming pattern
-> either).
+**Secrets are excluded by default.** `GET /api/v1/config` returns `{values, secretKeys}`
+(bd:envpit-durd) — `secretKeys` names every key the server flagged `is_secret=true`. The
+zero-option `MergeIntoEnv()` call excludes every key named there, reporting it in
+`result.SkippedSecrets`; only `WithIncludeSecrets()` opts a call into writing secret values
+into the real process environment (inherited by every child process, commonly captured whole
+by crash reporters/APM agents, readable at `/proc/<pid>/environ` on Linux — naming the option
+at the call site IS the acknowledgment of that exposure, there is no second flag). Check
+order per key: a null value is never written or counted; a secret-flagged key is skipped
+(`SkippedSecrets`) unless `WithIncludeSecrets()`; an already-present key is skipped
+(`SkippedExisting`) unless `WithOverride()` — the secret check runs BEFORE the existing-key
+check, so `WithOverride()` alone can never smuggle a secret through. `Client.SecretKeys()`
+exposes the same key names (sorted, values-free) if you want to build your own filter without
+re-fetching. `WithOnly`/`WithExclude` compose WITH this filter, never around it: naming a
+secret's key in `WithOnly` does not pull it through on its own — see `MergeIntoEnv`'s doc
+comment for the full worked-through interaction and its own tests.
 
 **Concurrency.** Calling `MergeIntoEnv` concurrently with other Go code's `os.Getenv`/
 `os.Setenv` calls is safe at the pure-Go level — the stdlib (`syscall/env_unix.go`) guards all
@@ -151,8 +152,11 @@ info := client.CacheInfo()          // FetchedAt / Age / LastError / Etag / Refr
 
 result := client.MergeIntoEnv(      // one-time boot-time write into os.Environ — see above
     envpit.WithOverride(),          // EnvPit wins over an existing os.Environ value (default: it doesn't)
+    envpit.WithIncludeSecrets(),    // opt in to secret-flagged values too (default: excluded)
     envpit.WithOnly("PORT"),        // allowlist — or envpit.WithExclude("SOME_KEY") for a denylist
 )
+
+secretKeys := client.SecretKeys()   // sorted key NAMES the current snapshot flagged secret
 
 client.Close()                      // stops background refresh + realtime; safe to call more than once
 ```
@@ -244,9 +248,9 @@ value-free instead, since it has no such Node/Python-parity excuse).
 - `MergeIntoEnv` writes into the REAL process environment (`os.Setenv`), which is a strictly
   bigger exposure surface than this SDK's own in-memory cache — inherited by every child
   process, readable at `/proc/<pid>/environ`, often captured whole by crash reporters. It is
-  never called automatically, and it currently cannot exclude secrets (see "Native environment
-  integration" above for why and for the `WithOnly`/`WithExclude` workaround) — treat calling
-  it bare as a deliberate, informed choice, not a default-safe one.
+  never called automatically, and it excludes secret-flagged keys by default (bd:envpit-durd)
+  — see "Native environment integration" above for the full check order and for
+  `WithIncludeSecrets()`/`WithOnly`/`WithExclude`.
 
 ## Requirements
 

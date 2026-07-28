@@ -5,10 +5,23 @@ import (
 	"time"
 )
 
-// ConfigSnapshot is one environment's resolved config, exactly the shape GET /api/v1/config
-// returns — key -> value map, secret-flagged keys already decrypted server-side, non-secret
-// keys as-is. A nil pointer value and an absent key are treated identically ("unset") by every
-// getter and by the change-diff algorithm — the Go mapping of Node/Python's null≡absent rule.
+// ConfigSnapshot is one environment's resolved VALUES — key -> value map, secret-flagged keys
+// already decrypted server-side, non-secret keys as-is. A nil pointer value and an absent key
+// are treated identically ("unset") by every getter and by the change-diff algorithm — the Go
+// mapping of Node/Python's null≡absent rule.
+//
+// Deliberately kept a plain map (not widened into a struct that also carries secret-key names)
+// even after bd:envpit-durd taught the wire envelope to label which keys are secret
+// (AC-SEC-E11): diffSnapshots' contract is a values-only diff (a secretKeys-only change is not
+// a config change — see diffSnapshots' own doc comment), the typed getters only ever needed
+// values, and widening this type into a struct would break every existing map-literal/
+// map-indexing use of it (redaction_test.go's ConfigSnapshot{...} composite literal,
+// property_test.go's setSnapshotValue direct index-assignment, and every bare-map "snapshot"/
+// "before"/"after" fixture in test-vectors/getters.json and test-vectors/snapshot-diff.json,
+// which predate durd and were not part of that change). The secret-key NAMES a fetch returned
+// live alongside this type instead — on fetchResult (transport.go) and Client.secretKeys
+// (client.go, exposed read-only via Client.SecretKeys()) — read by MergeIntoEnv (env.go), the
+// one call site that actually needs to tell secrets apart from ordinary config.
 //
 // AC-SEC-SDK3-1 (THREATMODEL-envpit-0t2z-3.md F1): Go leaks struct/map contents via %v/%+v/%#v
 // reflection-based formatting by DEFAULT if a type doesn't override String()/GoString() —

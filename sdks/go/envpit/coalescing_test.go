@@ -37,16 +37,16 @@ func assertCoalescingRefresherFreshnessInvariant(t *testing.T) {
 		configFn: func(r *http.Request) (*http.Response, error) {
 			switch atomic.AddInt32(&callIndex, 1) {
 			case 1:
-				return jsonResponse(200, `{"K":"v0"}`), nil
+				return jsonResponse(200, envelopeBody(`{"K":"v0"}`)), nil
 			case 2:
 				close(reachedSecond)
 				<-releaseSecond
-				return jsonResponseWithEtag(200, `{"K":"v1"}`, "e1"), nil
+				return jsonResponseWithEtag(200, envelopeBody(`{"K":"v1"}`), "e1"), nil
 			case 3:
-				return jsonResponseWithEtag(200, `{"K":"v2"}`, "e2"), nil
+				return jsonResponseWithEtag(200, envelopeBody(`{"K":"v2"}`), "e2"), nil
 			default:
 				t.Errorf("unexpected extra fetch call — a burst of concurrent triggers must coalesce into at most one catch-up fetch, not one per trigger")
-				return jsonResponse(200, `{"K":"unexpected"}`), nil
+				return jsonResponse(200, envelopeBody(`{"K":"unexpected"}`)), nil
 			}
 		},
 		eventsFn: neverConnectEvents(t),
@@ -154,7 +154,7 @@ func TestCoalescingRefresherNeverRunsMoreThanOneFetchConcurrently(t *testing.T) 
 			}
 			atomic.AddInt32(&totalCalls, 1)
 			time.Sleep(2 * time.Millisecond) // widen the race window
-			return jsonResponse(200, `{"K":"v"}`), nil
+			return jsonResponse(200, envelopeBody(`{"K":"v"}`)), nil
 		},
 		eventsFn: neverConnectEvents(t),
 	}

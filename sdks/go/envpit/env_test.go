@@ -39,11 +39,11 @@ func TestMergeIntoEnvWritesNewKeyNotAlreadyInProcessEnv(t *testing.T) {
 	if !ok || got != "from-envpit" {
 		t.Fatalf("os.LookupEnv(%s) = (%q, %v), want (\"from-envpit\", true)", key, got, ok)
 	}
-	if !containsStr(result.Set, key) {
-		t.Fatalf("result.Set = %v, want it to contain %s", result.Set, key)
+	if !containsStr(result.Merged, key) {
+		t.Fatalf("result.Merged = %v, want it to contain %s", result.Merged, key)
 	}
-	if containsStr(result.Skipped, key) {
-		t.Fatalf("result.Skipped = %v, should NOT contain %s (it was newly set)", result.Skipped, key)
+	if containsStr(result.SkippedExisting, key) {
+		t.Fatalf("result.SkippedExisting = %v, should NOT contain %s (it was newly set)", result.SkippedExisting, key)
 	}
 }
 
@@ -63,11 +63,11 @@ func TestMergeIntoEnvDoesNotOverrideExistingProcessEnvByDefault(t *testing.T) {
 	if got != "already-here" {
 		t.Fatalf("os.Getenv(%s) = %q, want %q (existing process env must win by default)", key, got, "already-here")
 	}
-	if !containsStr(result.Skipped, key) {
-		t.Fatalf("result.Skipped = %v, want it to contain %s", result.Skipped, key)
+	if !containsStr(result.SkippedExisting, key) {
+		t.Fatalf("result.SkippedExisting = %v, want it to contain %s", result.SkippedExisting, key)
 	}
-	if containsStr(result.Set, key) {
-		t.Fatalf("result.Set = %v, should NOT contain %s (it was skipped, not set)", result.Set, key)
+	if containsStr(result.Merged, key) {
+		t.Fatalf("result.Merged = %v, should NOT contain %s (it was skipped, not merged)", result.Merged, key)
 	}
 }
 
@@ -87,58 +87,185 @@ func TestMergeIntoEnvWithOverrideOverwritesExistingProcessEnv(t *testing.T) {
 	if got != "from-envpit" {
 		t.Fatalf("os.Getenv(%s) = %q, want %q (WithOverride must let EnvPit win)", key, got, "from-envpit")
 	}
-	if !containsStr(result.Set, key) {
-		t.Fatalf("result.Set = %v, want it to contain %s", result.Set, key)
+	if !containsStr(result.Merged, key) {
+		t.Fatalf("result.Merged = %v, want it to contain %s", result.Merged, key)
 	}
 }
 
-// ---- MergeIntoEnv: precise per-key control (the only available secret-safety primitive,
+// ---- MergeIntoEnv: secrets excluded by default (bd:envpit-durd) --------------------------
+//
+// The shared cross-language behavior (secrets excluded unless WithIncludeSecrets, secret check
+// before existing check, etc.) is covered by TestVectorsEnvMerge (vectors_test.go) against
+// test-vectors/env-merge.json. This section covers Go-local surface the shared vectors
+// deliberately don't (WithOnly/WithExclude interaction — no Node/Java equivalent) plus
+// SecretKeys() itself.
 
-// since the resolve wire format carries no isSecret flag — see doc comment / README) ------
+// newLoadedClientWithSecrets builds a client the same way newLoadedClient does, then directly
+// installs a secret-key set on it (same-package access) — the shared vector suite doesn't cover
+// WithOnly/WithExclude, so tests exercising that interaction need their own way to mark keys
+// secret without duplicating a real server-shaped envelope by hand for every case.
+func newLoadedClientWithSecrets(t *testing.T, valuesJSON string, secretKeys ...string) *Client {
+	t.Helper()
+	client := newLoadedClient(t, valuesJSON)
+	client.mu.Lock()
+	client.secretKeys = secretKeys
+	client.mu.Unlock()
+	return client
+}
 
-func TestMergeIntoEnvWithOnlyMergesAllowlistedKeysOnly(t *testing.T) {
+func TestMergeIntoEnvWithOnlyCannotPullASecretThroughWithoutIncludeSecrets(t *testing.T) {
 	envKeyCounter++
-	pub := fmt.Sprintf("ENVPIT_MERGE_TEST_PUB_%d", envKeyCounter)
-	sec := fmt.Sprintf("ENVPIT_MERGE_TEST_SEC_%d", envKeyCounter)
+	pub := fmt.Sprintf("ENVPIT_MERGE_TEST_ONLYSEC_PUB_%d", envKeyCounter)
+	sec := fmt.Sprintf("ENVPIT_MERGE_TEST_ONLYSEC_SEC_%d", envKeyCounter)
 	t.Cleanup(func() { os.Unsetenv(pub); os.Unsetenv(sec) })
 	os.Unsetenv(pub)
 	os.Unsetenv(sec)
 
-	client := newLoadedClient(t, fmt.Sprintf(`{%q:"public-value",%q:"secret-value"}`, pub, sec))
+	client := newLoadedClientWithSecrets(t,
+		fmt.Sprintf(`{%q:"public-value",%q:"secret-value"}`, pub, sec), sec)
+
+	// Naming the secret explicitly in WithOnly must NOT pull it through — WithIncludeSecrets()
+	// is still required regardless of what WithOnly allowlists.
+	result := client.MergeIntoEnv(WithOnly(pub, sec))
+
+	if got := os.Getenv(pub); got != "public-value" {
+		t.Fatalf("os.Getenv(%s) = %q, want %q", pub, got, "public-value")
+	}
+	if _, ok := os.LookupEnv(sec); ok {
+		t.Fatalf("os.LookupEnv(%s) found a value — WithOnly naming a secret must not merge it without WithIncludeSecrets()", sec)
+	}
+	if !containsStr(result.Merged, pub) || containsStr(result.Merged, sec) {
+		t.Fatalf("result.Merged = %v, want exactly [%s]", result.Merged, pub)
+	}
+	if !containsStr(result.SkippedSecrets, sec) {
+		t.Fatalf("result.SkippedSecrets = %v, want it to contain %s", result.SkippedSecrets, sec)
+	}
+}
+
+func TestMergeIntoEnvWithOnlyPlusIncludeSecretsMergesAnAllowlistedSecret(t *testing.T) {
+	envKeyCounter++
+	sec := fmt.Sprintf("ENVPIT_MERGE_TEST_ONLYSEC2_%d", envKeyCounter)
+	t.Cleanup(func() { os.Unsetenv(sec) })
+	os.Unsetenv(sec)
+
+	client := newLoadedClientWithSecrets(t, fmt.Sprintf(`{%q:"secret-value"}`, sec), sec)
+
+	result := client.MergeIntoEnv(WithOnly(sec), WithIncludeSecrets())
+
+	if got := os.Getenv(sec); got != "secret-value" {
+		t.Fatalf("os.Getenv(%s) = %q, want %q (WithOnly + WithIncludeSecrets together must merge it)", sec, got, "secret-value")
+	}
+	if !containsStr(result.Merged, sec) {
+		t.Fatalf("result.Merged = %v, want it to contain %s", result.Merged, sec)
+	}
+}
+
+func TestMergeIntoEnvWithExcludeStillObeysTheSecretFilterForNonExcludedKeys(t *testing.T) {
+	envKeyCounter++
+	pub := fmt.Sprintf("ENVPIT_MERGE_TEST_EXCLSEC_PUB_%d", envKeyCounter)
+	sec := fmt.Sprintf("ENVPIT_MERGE_TEST_EXCLSEC_SEC_%d", envKeyCounter)
+	other := fmt.Sprintf("ENVPIT_MERGE_TEST_EXCLSEC_OTHER_%d", envKeyCounter)
+	t.Cleanup(func() { os.Unsetenv(pub); os.Unsetenv(sec); os.Unsetenv(other) })
+	os.Unsetenv(pub)
+	os.Unsetenv(sec)
+	os.Unsetenv(other)
+
+	client := newLoadedClientWithSecrets(t,
+		fmt.Sprintf(`{%q:"public-value",%q:"secret-value",%q:"other-value"}`, pub, sec, other), sec)
+
+	// Excluding an unrelated key must not change the secret filter's outcome for `sec`.
+	result := client.MergeIntoEnv(WithExclude(other))
+
+	if got := os.Getenv(pub); got != "public-value" {
+		t.Fatalf("os.Getenv(%s) = %q, want %q", pub, got, "public-value")
+	}
+	if _, ok := os.LookupEnv(sec); ok {
+		t.Fatalf("os.LookupEnv(%s) found a value — the secret filter must still apply under WithExclude", sec)
+	}
+	if _, ok := os.LookupEnv(other); ok {
+		t.Fatalf("os.LookupEnv(%s) found a value — WithExclude must still skip denylisted keys", other)
+	}
+	if !containsStr(result.Merged, pub) {
+		t.Fatalf("result.Merged = %v, want it to contain %s", result.Merged, pub)
+	}
+	if !containsStr(result.SkippedSecrets, sec) {
+		t.Fatalf("result.SkippedSecrets = %v, want it to contain %s", result.SkippedSecrets, sec)
+	}
+}
+
+func TestClientSecretKeysReturnsASortedCopySafeToLogAndDoesNotAliasInternalState(t *testing.T) {
+	client := newLoadedClientWithSecrets(t, `{"A":"1","B":"2"}`, "B", "A")
+
+	got := client.SecretKeys()
+	want := []string{"A", "B"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("SecretKeys() = %v, want %v (sorted)", got, want)
+	}
+
+	// Mutating the returned slice must not corrupt the client's own state (it's a copy).
+	got[0] = "MUTATED"
+	again := client.SecretKeys()
+	if again[0] != "A" {
+		t.Fatalf("SecretKeys() returned an aliased slice — second call = %v, want [A B] unaffected by the first call's mutation", again)
+	}
+}
+
+func TestClientSecretKeysIsEmptyNotNilWhenNothingIsSecret(t *testing.T) {
+	client := newLoadedClient(t, `{"A":"1"}`)
+	got := client.SecretKeys()
+	if got == nil {
+		t.Fatal("SecretKeys() = nil, want an empty (non-nil) slice when nothing is secret")
+	}
+	if len(got) != 0 {
+		t.Fatalf("SecretKeys() = %v, want empty", got)
+	}
+}
+
+// ---- MergeIntoEnv: WithOnly / WithExclude allowlist/denylist (non-secret keys) ------------
+
+func TestMergeIntoEnvWithOnlyMergesAllowlistedKeysOnly(t *testing.T) {
+	envKeyCounter++
+	pub := fmt.Sprintf("ENVPIT_MERGE_TEST_PUB_%d", envKeyCounter)
+	other := fmt.Sprintf("ENVPIT_MERGE_TEST_OTHER_%d", envKeyCounter)
+	t.Cleanup(func() { os.Unsetenv(pub); os.Unsetenv(other) })
+	os.Unsetenv(pub)
+	os.Unsetenv(other)
+
+	client := newLoadedClient(t, fmt.Sprintf(`{%q:"public-value",%q:"other-value"}`, pub, other))
 
 	result := client.MergeIntoEnv(WithOnly(pub))
 
 	if got := os.Getenv(pub); got != "public-value" {
 		t.Fatalf("os.Getenv(%s) = %q, want %q", pub, got, "public-value")
 	}
-	if _, ok := os.LookupEnv(sec); ok {
-		t.Fatalf("os.LookupEnv(%s) found a value — WithOnly must exclude keys not in the allowlist", sec)
+	if _, ok := os.LookupEnv(other); ok {
+		t.Fatalf("os.LookupEnv(%s) found a value — WithOnly must exclude keys not in the allowlist", other)
 	}
-	if !containsStr(result.Set, pub) || containsStr(result.Set, sec) {
-		t.Fatalf("result.Set = %v, want exactly [%s]", result.Set, pub)
+	if !containsStr(result.Merged, pub) || containsStr(result.Merged, other) {
+		t.Fatalf("result.Merged = %v, want exactly [%s]", result.Merged, pub)
 	}
 }
 
 func TestMergeIntoEnvWithExcludeSkipsDenylistedKeys(t *testing.T) {
 	envKeyCounter++
 	pub := fmt.Sprintf("ENVPIT_MERGE_TEST_PUB2_%d", envKeyCounter)
-	sec := fmt.Sprintf("ENVPIT_MERGE_TEST_SEC2_%d", envKeyCounter)
-	t.Cleanup(func() { os.Unsetenv(pub); os.Unsetenv(sec) })
+	other := fmt.Sprintf("ENVPIT_MERGE_TEST_OTHER2_%d", envKeyCounter)
+	t.Cleanup(func() { os.Unsetenv(pub); os.Unsetenv(other) })
 	os.Unsetenv(pub)
-	os.Unsetenv(sec)
+	os.Unsetenv(other)
 
-	client := newLoadedClient(t, fmt.Sprintf(`{%q:"public-value",%q:"secret-value"}`, pub, sec))
+	client := newLoadedClient(t, fmt.Sprintf(`{%q:"public-value",%q:"other-value"}`, pub, other))
 
-	result := client.MergeIntoEnv(WithExclude(sec))
+	result := client.MergeIntoEnv(WithExclude(other))
 
 	if got := os.Getenv(pub); got != "public-value" {
 		t.Fatalf("os.Getenv(%s) = %q, want %q", pub, got, "public-value")
 	}
-	if _, ok := os.LookupEnv(sec); ok {
-		t.Fatalf("os.LookupEnv(%s) found a value — WithExclude must skip denylisted keys", sec)
+	if _, ok := os.LookupEnv(other); ok {
+		t.Fatalf("os.LookupEnv(%s) found a value — WithExclude must skip denylisted keys", other)
 	}
-	if !containsStr(result.Set, pub) || containsStr(result.Set, sec) {
-		t.Fatalf("result.Set = %v, want exactly [%s]", result.Set, pub)
+	if !containsStr(result.Merged, pub) || containsStr(result.Merged, other) {
+		t.Fatalf("result.Merged = %v, want exactly [%s]", result.Merged, pub)
 	}
 }
 
@@ -155,8 +282,8 @@ func TestMergeIntoEnvSkipsUnsetNilValuedKeys(t *testing.T) {
 	if _, ok := os.LookupEnv(nullKey); ok {
 		t.Fatalf("os.LookupEnv(%s) found a value — a null/unset cell must never be written", nullKey)
 	}
-	if containsStr(result.Set, nullKey) || containsStr(result.Skipped, nullKey) {
-		t.Fatalf("result = %+v, a null cell should appear in neither Set nor Skipped", result)
+	if containsStr(result.Merged, nullKey) || containsStr(result.SkippedExisting, nullKey) || containsStr(result.SkippedSecrets, nullKey) {
+		t.Fatalf("result = %+v, a null cell should appear in none of Merged/SkippedExisting/SkippedSecrets", result)
 	}
 }
 
@@ -243,8 +370,8 @@ func TestMergeResultKeysAreSortedForDeterministicLogging(t *testing.T) {
 	client := newLoadedClient(t, fmt.Sprintf(`{%q:"1",%q:"2"}`, a, b))
 	result := client.MergeIntoEnv()
 
-	if !sort.StringsAreSorted(result.Set) {
-		t.Fatalf("result.Set = %v, want sorted output", result.Set)
+	if !sort.StringsAreSorted(result.Merged) {
+		t.Fatalf("result.Merged = %v, want sorted output", result.Merged)
 	}
 }
 
@@ -269,7 +396,26 @@ func TestPackageLevelMergeIntoEnvDelegatesToDefaultClient(t *testing.T) {
 	if got := os.Getenv(key); got != "sugar-value" {
 		t.Fatalf("os.Getenv(%s) = %q, want %q via package-level MergeIntoEnv", key, got, "sugar-value")
 	}
-	if !containsStr(result.Set, key) {
-		t.Fatalf("result.Set = %v, want it to contain %s", result.Set, key)
+	if !containsStr(result.Merged, key) {
+		t.Fatalf("result.Merged = %v, want it to contain %s", result.Merged, key)
+	}
+}
+
+func TestPackageLevelSecretKeysDelegatesToDefaultClient(t *testing.T) {
+	rt := &fakeTransport{configFn: fetchQueue(t, `{"A":"1","B":"2"}`)}
+	_, err := Load(context.Background(), WithAPIKey("epk_test"), WithPollInterval(0), WithHTTPClient(fakeHTTPClient(rt)), WithLogger(nil))
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	t.Cleanup(Close)
+
+	defaultMu.RLock()
+	defaultClient.mu.Lock()
+	defaultClient.secretKeys = []string{"B"}
+	defaultClient.mu.Unlock()
+	defaultMu.RUnlock()
+
+	if got := SecretKeys(); len(got) != 1 || got[0] != "B" {
+		t.Fatalf("SecretKeys() = %v, want [B] via package-level delegation", got)
 	}
 }

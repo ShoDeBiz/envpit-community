@@ -23,7 +23,12 @@ const defaultBodyByteCap int64 = 5 * 1024 * 1024 // 5 MiB
 
 type fetchResult struct {
 	snapshot ConfigSnapshot
-	etag     string
+	// secretKeys are the key NAMES the server flagged is_secret=true (bd:envpit-durd,
+	// AC-SEC-E11) — never values, and never checked for membership in snapshot (a name absent
+	// from snapshot excludes nothing — test-vectors/resolve-body.json's
+	// "secret-key-absent-from-values-is-tolerated" case).
+	secretKeys []string
+	etag       string
 }
 
 func fetchConfig(ctx context.Context, httpClient *http.Client, host, apiKey string) (fetchResult, error) {
@@ -62,24 +67,110 @@ func fetchConfig(ctx context.Context, httpClient *http.Client, host, apiKey stri
 		return fetchResult{}, mapTransportError(url, err)
 	}
 
-	var snapshot ConfigSnapshot
-	if err := json.Unmarshal(body, &snapshot); err != nil {
-		// Covers malformed JSON (unterminated string, invalid \u escape, trailing garbage —
-		// json.Unmarshal rejects all three) AND a non-object top-level JSON value (array/number/
-		// bool/string all fail to unmarshal into a map type) — Go's typed unmarshal target gives
-		// us the top-level-shape validation Python's transport.py has and Node's doesn't (see
-		// test-vectors/CONFORMANCE.md's "discovered-but-out-of-scope" note) for free, without
-		// extra code.
-		return fetchResult{}, newNetworkError(fmt.Sprintf("envpit: EnvPit returned an invalid JSON response from %s", url))
-	}
-	if snapshot == nil {
-		// The one non-object shape json.Unmarshal does NOT reject for a map target: a literal
-		// JSON `null` body decodes to a nil map with no error. Reject it explicitly (Python
-		// parity: isinstance(parsed, dict)).
+	snapshot, secretKeys, err := parseResolveEnvelope(body)
+	if err != nil {
+		// bd:envpit-durd (AC-SEC-E11, test-vectors/resolve-body.json's own `description`): a body
+		// that parses as JSON but is not the `{values, secretKeys}` envelope — including the
+		// pre-durd bare map, which this SDK deliberately does NOT accept as a legacy fallback (see
+		// parseResolveEnvelope's doc comment) — is a malformed response, not a distinct new
+		// failure mode. BOTH branches below map onto the same NetworkError CLASS as any other
+		// invalid-JSON-body condition (error-mapping.json's "invalid-json-body" case); only the
+		// message differs, never the type.
+		if errors.Is(err, errMalformedEnvelope) {
+			// Names the likely CAUSE rather than only the symptom: the most probable way to reach
+			// this is a current SDK pointed at an older self-hosted server, and a bare "invalid
+			// JSON response" sends someone hunting a network or proxy fault they do not have.
+			// Same reasoning as Node's and Python's wording for this condition.
+			return fetchResult{}, newNetworkError(fmt.Sprintf(
+				"envpit: EnvPit returned a config-resolve response this SDK does not understand (from %s); "+
+					"expected {values, secretKeys}. An EnvPit server predating the secret-labelling change "+
+					"returns a bare key/value map instead — if you self-host, upgrade the server", url))
+		}
+		// errInvalidJSONBody — the body was never a JSON object (proxy error page, truncated
+		// stream, garbage). Unchanged wording, and asserted verbatim by
+		// test-vectors/error-messages.json's `invalid-json-response` case.
 		return fetchResult{}, newNetworkError(fmt.Sprintf("envpit: EnvPit returned an invalid JSON response from %s", url))
 	}
 
-	return fetchResult{snapshot: snapshot, etag: resp.Header.Get("Etag")}, nil
+	return fetchResult{snapshot: snapshot, secretKeys: secretKeys, etag: resp.Header.Get("Etag")}, nil
+}
+
+// parseResolveEnvelope's two internal sentinels — neither one's text is ever surfaced; fetchConfig
+// re-wraps them into the caller-facing messages above. They exist to keep two genuinely different
+// failures apart: errInvalidJSONBody means the body was not a JSON object at all (a proxy error
+// page, a truncated stream, garbage), while errMalformedEnvelope means the body WAS a JSON object
+// but not this envelope — overwhelmingly a server predating bd:envpit-durd. Collapsing them into
+// one message would tell someone whose reverse proxy returned HTML to go upgrade their EnvPit
+// server.
+var errMalformedEnvelope = errors.New("envpit: malformed resolve-body envelope")
+var errInvalidJSONBody = errors.New("envpit: response body is not a JSON object")
+
+// parseResolveEnvelope strictly decodes the post-bd:envpit-durd config-resolve wire body:
+// `{"values": {key: string|null, ...}, "secretKeys": [string, ...]}` (test-vectors/
+// resolve-body.json, AC-SEC-E11) — both resolve routes' identical @ApiResponse schema, see
+// config-resolve.controller.ts in the main repo.
+//
+// The pre-durd bare `{key: value}` map is REJECTED, not accepted as a legacy fallback: a bare
+// map is indistinguishable from `secretKeys: []`, which every native-env-merge caller (env.go)
+// would read as "this environment has no secrets" and merge production secrets into the process
+// environment while reporting that none were found. There were zero published SDK releases when
+// this landed, so failing loudly against a pre-durd server is the safe direction with nothing
+// real to break. Both `values` and `secretKeys` are REQUIRED keys — a body missing either, or
+// carrying `secretKeys` as anything but an array of strings, or `values` as anything but an
+// object with string-or-null cell values (including a literal JSON `null` for `values` itself),
+// is rejected the same way. An unrecognized extra top-level field is silently ignored (forward
+// compatibility — only `values`/`secretKeys` are load-bearing).
+func parseResolveEnvelope(body []byte) (ConfigSnapshot, []string, error) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		// Malformed JSON, or a non-object top-level value (array/number/bool/string all fail to
+		// unmarshal into a map type) — Go's typed unmarshal target gives us this validation for
+		// free, matching Python's isinstance(parsed, dict) check. Distinct sentinel from the
+		// envelope violations below: this body was never a config-resolve response at all, so
+		// telling the caller their SERVER is out of date would point them at the wrong thing.
+		return nil, nil, errInvalidJSONBody
+	}
+	if raw == nil {
+		// A literal JSON `null` body decodes to a nil map with no error for a map target — the
+		// one non-object shape the unmarshal above does NOT reject on its own.
+		return nil, nil, errInvalidJSONBody
+	}
+
+	valuesRaw, hasValues := raw["values"]
+	secretKeysRaw, hasSecretKeys := raw["secretKeys"]
+	if !hasValues || !hasSecretKeys {
+		// Covers the pre-durd bare map (neither key present), `{}` (ambiguous between "pre-durd,
+		// empty environment" and "new server that dropped both fields" — rejected either way so
+		// the envelope check stays total), and a body missing exactly one of the two keys.
+		return nil, nil, errMalformedEnvelope
+	}
+
+	var values map[string]*string
+	if err := json.Unmarshal(valuesRaw, &values); err != nil {
+		// Rejects `values` as a non-object (array/number/bool/string) or an object containing a
+		// non-string, non-null cell value (e.g. a bare number — every config value crosses the
+		// wire as a JSON string or null, unchanged from the pre-durd contract).
+		return nil, nil, errMalformedEnvelope
+	}
+	if values == nil {
+		// `"values": null` decodes to a nil map with no unmarshal error for a map target — reject
+		// explicitly. `"values": {}` (the legitimate empty-environment case) decodes to a
+		// non-nil, empty map and is NOT caught by this check.
+		return nil, nil, errMalformedEnvelope
+	}
+
+	var secretKeys []string
+	if err := json.Unmarshal(secretKeysRaw, &secretKeys); err != nil {
+		// Rejects `secretKeys` as anything but a JSON array of strings — a bare string (iterable
+		// character-by-character in several other languages) or an array containing a non-string
+		// element both fail here.
+		return nil, nil, errMalformedEnvelope
+	}
+	if secretKeys == nil {
+		secretKeys = []string{}
+	}
+
+	return ConfigSnapshot(values), secretKeys, nil
 }
 
 var errBodyTooLarge = errors.New("envpit: response body exceeded max size")

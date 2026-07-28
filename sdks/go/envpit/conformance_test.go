@@ -49,7 +49,7 @@ func TestINV_SDK_2_getters_after_load_never_trigger_a_network_call(t *testing.T)
 	calls := 0
 	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		calls++
-		return jsonResponse(200, `{"K":"v"}`), nil
+		return jsonResponse(200, envelopeBody(`{"K":"v"}`)), nil
 	})
 	client, err := NewClient(context.Background(), WithAPIKey("epk_test"), WithPollInterval(0),
 		WithHTTPClient(fakeHTTPClient(&fakeTransport{configFn: rt})), WithLogger(nil))
@@ -107,7 +107,7 @@ func TestINV_SDK_5_final_state_reflects_the_freshest_refresh_not_a_stale_overwri
 func TestINV_SDK_6_a_slow_subscriber_never_blocks_dispatch_or_other_subscribers(t *testing.T) {
 	client := newLoadedClient(t, `{"K":"v0"}`)
 	client.httpClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		return jsonResponse(200, `{"K":"v1"}`), nil
+		return jsonResponse(200, envelopeBody(`{"K":"v1"}`)), nil
 	})}
 
 	slowCtx, slowCancel := context.WithCancel(context.Background())
@@ -144,7 +144,7 @@ func TestINV_SDK_6_a_slow_subscriber_never_blocks_dispatch_or_other_subscribers(
 func TestINV_SDK_7_change_payload_is_key_names_only_and_snapshot_applied_before_delivery(t *testing.T) {
 	client := newLoadedClient(t, `{"A":"before-secret-alpha"}`)
 	client.httpClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		return jsonResponse(200, `{"A":"after-secret-alpha","B":"after-secret-beta"}`), nil
+		return jsonResponse(200, envelopeBody(`{"A":"after-secret-alpha","B":"after-secret-beta"}`)), nil
 	})}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -170,7 +170,7 @@ func TestINV_SDK_7_change_payload_is_key_names_only_and_snapshot_applied_before_
 func TestINV_SDK_7_no_change_event_fires_when_nothing_differs(t *testing.T) {
 	client := newLoadedClient(t, `{"A":"1"}`)
 	client.httpClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		return jsonResponse(200, `{"A":"1"}`), nil
+		return jsonResponse(200, envelopeBody(`{"A":"1"}`)), nil
 	})}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -207,7 +207,7 @@ func TestINV_SDK_9_etag_dedup_on_push_with_same_etag_does_not_trigger_a_refetch(
 	calls := 0
 	client.httpClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		calls++
-		return jsonResponse(200, `{"K":"v0"}`), nil
+		return jsonResponse(200, envelopeBody(`{"K":"v0"}`)), nil
 	})}
 
 	client.handlePushSignal("same-etag")
@@ -416,7 +416,7 @@ func TestINV_SDK_12_config_fetch_sends_x_api_key_header_and_never_authorization(
 	var seen http.Header
 	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		seen = r.Header
-		return jsonResponse(200, `{"K":"v"}`), nil
+		return jsonResponse(200, envelopeBody(`{"K":"v"}`)), nil
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()

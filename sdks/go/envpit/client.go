@@ -39,8 +39,14 @@ type Client struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	mu               sync.RWMutex
-	snapshot         ConfigSnapshot
+	mu       sync.RWMutex
+	snapshot ConfigSnapshot
+	// secretKeys are the key NAMES (never values) the CURRENTLY-LOADED snapshot's fetch flagged
+	// is_secret=true (bd:envpit-durd) — read by MergeIntoEnv (env.go) and exposed read-only via
+	// SecretKeys() below. Updated alongside snapshot on every successful load/refresh; left
+	// untouched (stale-while-revalidate, INV-SDK-4) on a failed background refresh, same as
+	// snapshot itself.
+	secretKeys       []string
 	fetchedAt        time.Time
 	lastErr          error
 	etag             string
@@ -153,6 +159,7 @@ func NewClient(ctx context.Context, opts ...Option) (*Client, error) {
 
 	c.mu.Lock()
 	c.snapshot = result.snapshot
+	c.secretKeys = result.secretKeys
 	c.fetchedAt = time.Now()
 	c.etag = result.etag
 	c.mu.Unlock()
@@ -315,6 +322,19 @@ func (c *Client) readRaw(key string) (string, bool) {
 		return "", false
 	}
 	return *v, true
+}
+
+// SecretKeys returns the key NAMES (never values) the CURRENTLY-LOADED snapshot's fetch flagged
+// is_secret=true (bd:envpit-durd) — a sorted copy, safe to log verbatim, so a caller can write
+// their own filter (e.g. against Get*) without re-fetching or re-deriving it from MergeIntoEnv's
+// result lists. Empty, never nil, when nothing in the current snapshot is flagged secret.
+func (c *Client) SecretKeys() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make([]string, len(c.secretKeys))
+	copy(out, c.secretKeys)
+	sort.Strings(out)
+	return out
 }
 
 // CacheInfo returns a point-in-time view of the client's in-memory cache.
@@ -572,6 +592,7 @@ func (c *Client) doRefresh(trigger ChangeTrigger) {
 	c.mu.Lock()
 	previous := c.snapshot
 	c.snapshot = result.snapshot
+	c.secretKeys = result.secretKeys
 	c.fetchedAt = time.Now()
 	c.lastErr = nil
 	c.etag = result.etag

@@ -101,9 +101,32 @@ func jsonResponseWithEtag(status int, body, etag string) *http.Response {
 	return resp
 }
 
+// envelopeBody wraps a bare values-map JSON literal — this SDK's own test-fixture convention
+// predating bd:envpit-durd, e.g. `{"K":"v0"}` — into the post-durd wire envelope
+// `{"values": ..., "secretKeys": [...]}` (test-vectors/resolve-body.json) that fetchConfig now
+// strictly requires. secretKeys defaults to none (`[]`); pass explicit names for a fixture that
+// needs a secret-labeled response (or use newLoadedClientWithSecrets, env_test.go, for the
+// common "build a client with some keys pre-marked secret" case).
+func envelopeBody(valuesJSON string, secretKeys ...string) string {
+	keysJSON := "[]"
+	if len(secretKeys) > 0 {
+		b, err := json.Marshal(secretKeys)
+		if err != nil {
+			panic("envelopeBody: secretKeys is always a []string literal in test code: " + err.Error())
+		}
+		keysJSON = string(b)
+	}
+	return `{"values":` + valuesJSON + `,"secretKeys":` + keysJSON + `}`
+}
+
 // fetchQueue returns a roundTripFunc that serves each body in order, one per call, and fails
 // the test loudly once exhausted — an unexpected extra fetch call is a test bug, not something
 // that should silently repeat stale data.
+//
+// Every body is wrapped into the post-durd envelope via envelopeBody before being served — every
+// existing caller predates bd:envpit-durd and supplies a bare values-map literal (e.g.
+// `{"K":"v0"}`), so wrapping centrally here means none of them needed updating body-by-body when
+// the wire contract changed underneath them.
 func fetchQueue(t *testing.T, bodies ...string) roundTripFunc {
 	t.Helper()
 	var mu sync.Mutex
@@ -116,7 +139,7 @@ func fetchQueue(t *testing.T, bodies ...string) roundTripFunc {
 		}
 		body := bodies[i]
 		i++
-		return jsonResponse(200, body), nil
+		return jsonResponse(200, envelopeBody(body)), nil
 	}
 }
 

@@ -136,7 +136,7 @@ func newFuzzTargetClient(f *testing.F) *Client {
 	f.Helper()
 	client, err := NewClient(context.Background(),
 		WithAPIKey("epk_test"), WithPollInterval(0),
-		WithHTTPClient(&http.Client{Transport: singleShotConfigRoundTripper{body: `{"K":"seed"}`}}),
+		WithHTTPClient(&http.Client{Transport: singleShotConfigRoundTripper{body: envelopeBody(`{"K":"seed"}`)}}),
 		WithLogger(nil))
 	if err != nil {
 		f.Fatalf("newFuzzTargetClient: NewClient failed: %v", err)
