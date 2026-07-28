@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import os
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Collection, MutableMapping
 
 from .client import EnvpitClient, FetchImpl
 from .errors import (
@@ -61,6 +61,7 @@ __all__ = [
     "on_error",
     "cache_info",
     "close",
+    "populate_environ",
 ]
 
 _default_lock = threading.Lock()
@@ -148,6 +149,18 @@ def on_error(listener: Callable[[EnvpitError], None]) -> Callable[[], None]:
 
 def cache_info() -> CacheInfo:
     return _require_default().cache_info
+
+
+def populate_environ(
+    *,
+    override: bool = False,
+    exclude: Collection[str] | None = None,
+    environ: MutableMapping[str, str] | None = None,
+) -> set[str]:
+    """Module-sugar delegate for `EnvpitClient.populate_environ()` — see its docstring
+    (`client.py`) for the full contract (opt-in only, no-override-by-default, boot-time
+    snapshot, no secret filtering — bd:envpit-yvyr)."""
+    return _require_default().populate_environ(override=override, exclude=exclude, environ=environ)
 
 
 def close() -> None:

@@ -5,10 +5,46 @@ without enterprise complexity.
 
 ## Quickstart
 
+The fastest way in: make your EXISTING `os.environ`-reading code work untouched — no client
+object, no new API to learn.
+
 ```bash
 pip install envpit
 export ENVPIT_API_KEY="epk_..."   # an environment-pinned key: Project → API Keys → New key
 ```
+
+```python
+import envpit
+import os
+
+envpit.load().populate_environ()        # fetch once, merge into os.environ (opt-in, explicit)
+print(os.environ["DATABASE_URL"])        # your existing os.environ-reading code, unmodified
+```
+
+`populate_environ()` never overwrites a variable your platform already set (same precedence as
+`python-dotenv`) — pass `override=True` if EnvPit values should win instead. It's a **one-shot,
+boot-time snapshot**: EnvPit's realtime refresh updates the client's own in-memory values
+immediately, but can't retroactively update `os.environ` (nothing can — this is true of
+`os.environ`/Spring `@Value` in every language, not an EnvPit limitation). Code that needs
+guaranteed-live values should read through the client instead — see "Client API" below.
+
+**⚠️ Known limitation — no automatic secret filtering.** `populate_environ()` is never called
+automatically (you always opt in explicitly), but it also cannot tell which keys are secrets: the
+resolve endpoint this SDK calls returns a flat `key -> value` map with no `is_secret` metadata
+(the endpoint that DOES know is guarded by session auth, a separate trust boundary this SDK's
+API-key auth can't reach — bd:envpit-yvyr). If you're merging secrets into `os.environ`, know
+that env vars are inherited by every child process, are often serialized into crash
+dumps/APM/`/proc/<pid>/environ`, and are logged by some startup scripts. Use `exclude={"MY_SECRET_KEY", ...}`
+to keep specific keys out by hand until the server ships secret metadata.
+
+```python
+envpit.load().populate_environ(
+    override=False,                       # default: existing os.environ values always win
+    exclude={"DB_PASSWORD", "JWT_SECRET"}, # keep these out of os.environ by name
+)
+```
+
+### Client API (in-memory reads, no `os.environ`)
 
 ```python
 import envpit
@@ -23,6 +59,60 @@ snapshot auto-refreshes in the background.
 Using FastAPI or another asyncio app? `load()` only blocks once, at startup — call it in your
 lifespan/startup hook, or use `await asyncio.to_thread(envpit.load)` if you'd rather not block
 the loop even there. Every read after that is a plain in-memory lookup.
+
+### Framework integrations
+
+Each framework gets the mechanism its own developers actually expect (bd:envpit-yvyr) — not one
+generic API forced onto all three.
+
+**FastAPI — Pydantic Settings** (`pip install envpit[fastapi]`). FastAPI's real idiom is
+`pydantic_settings.BaseSettings`, not `os.environ` — `EnvpitSettingsSource` is a genuine
+`PydanticBaseSettingsSource`, wired via `settings_customise_sources()`:
+
+```python
+from pydantic_settings import BaseSettings
+from envpit.integrations.fastapi import EnvpitSettingsSource
+
+class Settings(BaseSettings):
+    database_url: str
+    port: int = 8080
+
+    @classmethod
+    def settings_customise_sources(cls, settings_cls, init_settings, env_settings,
+                                    dotenv_settings, file_secret_settings):
+        return (EnvpitSettingsSource(settings_cls), init_settings, env_settings,
+                dotenv_settings, file_secret_settings)
+
+settings = Settings()   # database_url/port resolved from EnvPit, case-insensitive, env_prefix honored
+```
+
+**Flask — `app.config`** (`pip install envpit[flask]`):
+
+```python
+from flask import Flask
+from envpit.integrations.flask import init_app
+
+app = Flask(__name__)
+init_app(app)   # merges the EnvPit snapshot into app.config
+```
+
+**Django — `settings.py`, no extra install.** Django has no plugin hook for external settings
+sources (verified — its settings loader just imports `settings.py` as a plain module); the
+accepted idiom (the one `django-environ` also uses) is populating values at the top of the file,
+before the rest of it reads them:
+
+```python
+# settings.py
+import envpit
+from envpit.integrations.django import load_into_settings
+
+load_into_settings(globals(), client=envpit.load())
+
+DEBUG = DEBUG == "true"   # every EnvPit value is a string — typed post-processing is yours
+```
+
+All three integrations share `populate_environ()`'s precedence rules (existing value wins unless
+`override=True`) and the same secret-filtering limitation described above (`exclude=` param).
 
 ## API
 
@@ -43,6 +133,10 @@ client.get("DATABASE_URL")                      # str; raises MissingKeyError if
 client.get("DATABASE_URL", "postgres://local")  # str with a default — never raises
 client.get_int("PORT", 8080)                     # int; raises TypeMismatchError if unparsable
 client.get_bool("MAINTENANCE_MODE", False)       # bool: true/1/yes/on, false/0/no/off (ci)
+client.get_optional("PORT")                      # str | None — the only getter that never raises
+
+client.snapshot()                                # dict[str, str | None] — defensive copy, in-memory only
+client.populate_environ(override=False, exclude=None, environ=None)  # see Quickstart above
 
 unsubscribe = client.on_change(lambda event: ...)   # event: ChangeEvent (key names only)
 client.on_connection(lambda event: ...)             # event: ConnectionEvent
@@ -111,3 +205,6 @@ path).
 ## Requirements
 
 Python ≥ 3.10. Zero runtime dependencies — stdlib `urllib`/`json`/`threading`/`hashlib` only.
+`envpit.integrations.*` is opt-in and never imported by the core package: `envpit.integrations.
+fastapi` needs `pip install envpit[fastapi]` (pydantic-settings), `envpit.integrations.flask`
+needs `pip install envpit[flask]` (flask); `envpit.integrations.django` needs no extra install.

@@ -20,7 +20,11 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
   "Typing :: Typed",
 ]
-# Zero runtime dependencies (ADR-S3-02) — stdlib urllib/json/threading/hashlib only.
+# Zero runtime dependencies (ADR-S3-02) — stdlib urllib/json/threading/hashlib only. The
+# `envpit.integrations.*` subpackage (bd:envpit-yvyr) is opt-in and never imported by the core
+# package — its own extras below (`fastapi`/`flask`) are the ONLY place a runtime dependency is
+# pulled in, and only for callers who explicitly import that framework's integration module.
+# `envpit.integrations.django` needs no extra — it has no dependency on Django itself.
 dependencies = []
 
 [project.urls]
@@ -29,7 +33,9 @@ Repository = "https://github.com/ShoDeBiz/envpit-community"
 Issues = "https://github.com/ShoDeBiz/envpit-community/discussions"
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "mypy>=1.10", "ruff>=0.6"]
+dev = ["pytest>=8.0", "mypy>=1.10", "ruff>=0.6", "pydantic-settings>=2.0", "flask>=3.0"]
+fastapi = ["pydantic-settings>=2.0"]
+flask = ["flask>=3.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/envpit"]

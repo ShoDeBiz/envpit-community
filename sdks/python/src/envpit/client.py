@@ -30,10 +30,11 @@ from __future__ import annotations
 import os
 import re
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Collection, MutableMapping
 from datetime import datetime, timezone
 from typing import Any
 
+from ._environ_merge import merge_snapshot
 from .emitter import SafeEmitter
 from .errors import AuthenticationError, EnvpitError, MissingKeyError, TypeMismatchError
 from .realtime import RealtimeCallbacks, RealtimeTransport
@@ -363,6 +364,74 @@ class EnvpitClient:
         if normalized in FALSE_VALUES:
             return False
         raise TypeMismatchError(key, "boolean", raw)
+
+    def get_optional(self, key: str) -> str | None:
+        """Raw string read that never raises — returns `None` for an absent/unset key instead of
+        `MissingKeyError`. The one typed getter every `integrations/*` module needs (a Pydantic
+        Settings source, for instance, must report "no value" rather than raise per-field)."""
+        return self._read_raw(key)
+
+    # ---- native-mechanism merge (bd:envpit-yvyr) -------------------------------
+
+    def snapshot(self) -> dict[str, str | None]:
+        """A defensive (shallow) copy of the current in-memory config snapshot. Mutating the
+        returned dict never affects this client's own state — same in-memory-only, never-
+        network-call guarantee as every `get*()` call (INV-SDK-2/INV-SDK-3)."""
+        if self._snapshot is None:
+            raise RuntimeError(
+                "envpit: config not loaded yet — this should be unreachable via EnvpitClient.load()."
+            )
+        return dict(self._snapshot)
+
+    def _known_secret_keys(self) -> frozenset[str]:
+        """Prepared socket for server-provided secret metadata (Oliver, bd:envpit-yvyr, 2026-07-28
+        correction). ALWAYS empty today: `GET /v1/config` (`transport.fetch_config`) returns a
+        flat `key -> value` map with no `is_secret` field at all — verified against
+        `apps/api/src/config-management/config-resolve.controller.ts`'s documented response
+        schema (`additionalProperties: {type: 'string', nullable: true}`) and
+        `ConfigService.resolveEnvironmentSecretsInternal`'s `Record<string, string | null>`
+        return type in the main `envpit` repo. There is no signal here to filter on — NOT a
+        placeholder for a not-yet-written name heuristic (a heuristic would be wrong in both
+        directions: e.g. `DATABASE_URL` commonly embeds a password and would slip straight past
+        any "looks like SECRET/PASSWORD/TOKEN" pattern). The day the wire protocol adds
+        per-key secret metadata, only this method's body needs to change — every call site
+        (`populate_environ` below, `integrations/flask.py`, `integrations/django.py`) already
+        folds its result into the exclude set unconditionally."""
+        return frozenset()
+
+    def populate_environ(
+        self,
+        *,
+        override: bool = False,
+        exclude: Collection[str] | None = None,
+        environ: MutableMapping[str, str] | None = None,
+    ) -> set[str]:
+        """Merges the current snapshot into `os.environ` (or an injected `environ=` mapping —
+        test-only seam, mirrors `_fetch_impl`/`urlopen`) so existing `os.environ.get("X")` call
+        sites work unmodified — the "native mechanism" Oliver asked for (bd:envpit-yvyr).
+
+        NEVER called automatically by `load()` — this is an explicit, opt-in action, the only
+        posture that's honest given `_known_secret_keys()` can't yet tell secret values apart
+        from ordinary config (see its docstring). `exclude=` lets a caller who knows their own
+        secret key names keep them out by hand in the meantime.
+
+        A key already present in `environ` wins by default (no override) — same precedence
+        `python-dotenv.load_dotenv()` uses; pass `override=True` to overwrite instead. A snapshot
+        value of `None` (an unset EnvPit variable) is never written.
+
+        BOOT-TIME SNAPSHOT ONLY: this is a one-shot copy, not a subscription. EnvPit's realtime
+        refresh (SSE) updates THIS client's own in-memory snapshot (`get()` sees it immediately),
+        but cannot reach a value already copied out into `environ` — `os.environ` has no
+        equivalent of Spring's `@RefreshScope`. Call `populate_environ()` again after a
+        `on_change()` callback if you need the target mapping to track live updates; anything
+        that needs guaranteed-live values should read through the client (`get()`/`get_int()`/
+        etc.) instead of `environ`.
+
+        Returns the set of key NAMES actually written (never values — log-safe by construction).
+        """
+        target: MutableMapping[str, str] = environ if environ is not None else os.environ
+        combined_exclude = frozenset(exclude or ()) | self._known_secret_keys()
+        return merge_snapshot(self.snapshot(), target, override=override, exclude=combined_exclude)
 
     def _read_raw(self, key: str) -> str | None:
         # Structurally unreachable via the public API: `load()` never returns a client without
