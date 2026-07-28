@@ -89,6 +89,11 @@ func Errors(ctx context.Context) <-chan error { return requireDefault().Errors(c
 // namespace, unlike Node/Python where a method name and a type name never collide.)
 func Cache() CacheInfo { return requireDefault().CacheInfo() }
 
+// MergeIntoEnv delegates to the package-level default client's MergeIntoEnv — see that
+// method's doc comment (env.go) for the full boot-time-snapshot / no-override-by-default /
+// secret-filtering contract.
+func MergeIntoEnv(opts ...MergeOption) MergeResult { return requireDefault().MergeIntoEnv(opts...) }
+
 // Close closes and clears the package-level default client, if one is set. Unlike the other
 // package-level functions, Close is a no-op (not a panic) when no default client is set.
 func Close() {

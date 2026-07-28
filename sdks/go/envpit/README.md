@@ -35,6 +35,92 @@ for evt := range client.Changes(ctx) {
 }
 ```
 
+## Native environment integration (`os.Getenv`, no code changes)
+
+Go has no framework-level config convention to hook into (no Spring `@Value`, no Node
+`process.env` auto-population) — `os.Getenv` already *is* the idiom. `Client.MergeIntoEnv`
+writes the client's currently-loaded snapshot into the real process environment via
+`os.Setenv`, so code you already have that calls `os.Getenv("DATABASE_URL")` sees
+EnvPit-managed values with zero changes:
+
+```go
+client, err := envpit.Load(ctx)
+if err != nil { log.Fatal(err) }
+
+client.MergeIntoEnv()          // one-time, boot-time-only write into os.Environ — see below
+dbURL := os.Getenv("DATABASE_URL") // your existing code, completely unmodified
+```
+
+**Boot-time snapshot, not a live view.** `MergeIntoEnv` is never called for you automatically
+and never re-runs — a later poll tick, SSE push, or reconnect catch-up that changes the
+in-memory snapshot does **not** reach back into `os.Environ`. This mirrors every other
+language's native mechanism: `process.env` is a snapshot once Node's bootstrap assigns to it;
+a Spring `@Value`-injected field resolves once at bean construction unless you additionally
+opt into `@RefreshScope`. If a value needs to update live, keep reading it through
+`Client.Get*`/`Client.Changes(ctx)` instead of `os.Getenv`.
+
+**Existing `os.Environ` values always win by default.** A key already present in the process
+environment (checked via `os.LookupEnv` at call time) is left untouched — `MergeIntoEnv` only
+fills gaps, it never clobbers whatever your orchestrator/`.env` loader/`docker run -e` already
+set. Pass `envpit.WithOverride()` to invert that.
+
+```go
+result := client.MergeIntoEnv(
+    envpit.WithOverride(),        // EnvPit wins over an existing os.Environ value
+    envpit.WithOnly("PORT", "API_URL"), // merge ONLY these keys — see "Secrets" below
+    // envpit.WithExclude("INTERNAL_DEBUG_FLAG"), // or: merge everything EXCEPT these
+)
+fmt.Println(result.Set, result.Skipped, result.Errors) // deterministic, sorted; Errors is
+                                                          // nil unless an os.Setenv call itself
+                                                          // failed (e.g. a NUL byte in a value)
+```
+
+> ⚠️ **Secrets are NOT filtered by `MergeIntoEnv` today.** `GET /api/v1/config` (the one
+> endpoint this SDK ever calls) returns a flat `{key: value}` map with every secret-flagged
+> value already decrypted server-side and mixed in indistinguishably from plain config — the
+> wire protocol carries no per-key `isSecret` flag for any language's SDK to filter on
+> (verified against `apps/api/src/config-management/config.service.ts`'s
+> `resolveEnvironmentSecretsInternal`, which reads and then discards each row's own
+> `isSecret` flag before responding, and against the frozen cross-language
+> `test-vectors/snapshot-diff.json` shape, which has no such field). Calling
+> `MergeIntoEnv()` bare therefore writes **every** resolved value — including decrypted
+> secrets — into the real process environment, which is inherited by every child process and
+> commonly captured whole by crash reporters/APM agents. Until the server sends a secret flag
+> (tracked: bd:envpit-yvyr), the only available protection is `WithOnly`/`WithExclude` with an
+> explicit key list **you** supply from your own schema — the SDK deliberately does not guess
+> from key names (`DATABASE_URL` embedding a password does not match any naming pattern
+> either).
+
+**Concurrency.** Calling `MergeIntoEnv` concurrently with other Go code's `os.Getenv`/
+`os.Setenv` calls is safe at the pure-Go level — the stdlib (`syscall/env_unix.go`) guards all
+of them with one internal `sync.RWMutex`, so there's no Go-level race or corruption. The real
+hazard is **cgo**: C code your program links (some DNS resolver modes, certain database
+driver bindings, anything calling `getenv`/`setenv` from C) reads the process's raw `environ`
+directly and is **not** covered by that Go-level lock — a well-known class of Go/cgo
+environment-mutation bugs. Call `MergeIntoEnv` once, synchronously, immediately after
+`Load`/`NewClient` returns and before your program spawns other goroutines or does anything
+that might invoke cgo — the same "configure before you fork workers" discipline you'd apply
+to any other one-time boot step.
+
+## Framework integration — Viper, Gin/Fiber/Echo
+
+**Viper:** no dedicated integration is built, and none is planned as part of this feature.
+Viper's own [`AutomaticEnv()`/`BindEnv()`](https://github.com/spf13/viper) already read from
+`os.Environ` — once `MergeIntoEnv()` has run, Viper (or any other env-reading library) picks
+up EnvPit-managed values for free, with zero extra code and zero extra dependency. A
+dedicated `viper.RemoteProvider` implementation was considered (Viper does expose that
+extension point) and rejected: it would require adding Viper as a dependency to a package
+that is otherwise zero-runtime-dependency by design (`doc.go`, ADR-S3-02), and it would only
+re-implement — worse, and redundantly alongside — the refresh model `Client` already has.
+`MergeIntoEnv()` + Viper's existing env support is strictly simpler and gives the same result.
+
+**Gin / Fiber / Echo:** none of the three has any config-loading convention to hook into —
+they are HTTP routers, not config frameworks (no `@Value`, no `application.yml` equivalent).
+No dedicated middleware/integration is built for the same reason a Viper integration isn't:
+there is no extension point to plug into, and the natural call site — `os.Getenv` in `main()`
+before `gin.New()`/`fiber.New()`/`echo.New()` — is already exactly what `MergeIntoEnv()`
+enables with zero framework-specific code.
+
 ## API
 
 ```go
@@ -62,6 +148,12 @@ conns   := client.Connections(ctx)  // <-chan envpit.ConnectionEvent
 errs    := client.Errors(ctx)       // <-chan error — background-refresh failures + Or-family fallbacks
 
 info := client.CacheInfo()          // FetchedAt / Age / LastError / Etag / RefreshMode / ...
+
+result := client.MergeIntoEnv(      // one-time boot-time write into os.Environ — see above
+    envpit.WithOverride(),          // EnvPit wins over an existing os.Environ value (default: it doesn't)
+    envpit.WithOnly("PORT"),        // allowlist — or envpit.WithExclude("SOME_KEY") for a denylist
+)
+
 client.Close()                      // stops background refresh + realtime; safe to call more than once
 ```
 
@@ -149,6 +241,12 @@ value-free instead, since it has no such Node/Python-parity excuse).
   overrides `String()`/`GoString()` to redact.
 - Response bodies and realtime stream lines are size-capped (5 MiB / 64 KiB respectively) so a
   misbehaving or compromised server can't exhaust client memory.
+- `MergeIntoEnv` writes into the REAL process environment (`os.Setenv`), which is a strictly
+  bigger exposure surface than this SDK's own in-memory cache — inherited by every child
+  process, readable at `/proc/<pid>/environ`, often captured whole by crash reporters. It is
+  never called automatically, and it currently cannot exclude secrets (see "Native environment
+  integration" above for why and for the `WithOnly`/`WithExclude` workaround) — treat calling
+  it bare as a deliberate, informed choice, not a default-safe one.
 
 ## Requirements
 
