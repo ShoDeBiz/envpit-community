@@ -1,5 +1,6 @@
 import { SafeEmitter } from './emitter.js';
 import { EnvpitError, MissingKeyError, NetworkError, TypeMismatchError } from './errors.js';
+import { mergeSnapshotIntoEnv, type MergeIntoProcessEnvOptions, type MergeIntoProcessEnvResult } from './process-env-merge.js';
 import { RealtimeTransport } from './realtime-transport.js';
 import { fetchConfig, type ConfigScope } from './transport.js';
 import type {
@@ -236,6 +237,30 @@ export class EnvpitClient {
       realtimeSince: this.refreshMode === 'realtime' ? this.realtimeSince : null,
       lastChangeAt: this.lastChangeAt,
     };
+  }
+
+  /**
+   * Populates `process.env` from THIS client's current snapshot (bd:envpit-yvyr — owner
+   * directive 2026-07-27: existing `process.env.DATABASE_URL`-style code should keep working
+   * untouched, rather than every caller being forced through `envpit.get(...)`). Opt-in only —
+   * never called automatically by `load()` or a background refresh.
+   *
+   * Boot-time snapshot, not live (owner-confirmed trade-off, stated plainly rather than
+   * discovered in production): this writes the values held AT THE MOMENT OF THIS CALL. Node's
+   * `process.env` is a plain object with no refresh hook — unlike `client.get(key)` (always a
+   * synchronous read of the latest in-memory snapshot, kept current by the poll timer / SSE
+   * push), a value written here will NOT move again on a later `change` event. Call this again
+   * after a `change` if you need the merge to catch up, or keep using `client.get(...)` for
+   * anything that must always be current.
+   *
+   * See `MergeIntoProcessEnvOptions` for the required `acknowledgeSecretsMayBeIncluded` flag and
+   * why it can't be a real per-key secret filter today.
+   */
+  mergeIntoProcessEnv(options: MergeIntoProcessEnvOptions): MergeIntoProcessEnvResult {
+    if (this.snapshot === null) {
+      throw new Error('EnvPit: config not loaded yet — this should be unreachable via EnvpitClient.load().');
+    }
+    return mergeSnapshotIntoEnv(this.snapshot, process.env, options);
   }
 
   /** Raw string read. Throws `MissingKeyError` if the key is absent/null and no
