@@ -35,11 +35,17 @@ def _case(name: str) -> dict:
 
 
 def _build_padded_json_body(target_bytes: int) -> bytes:
-    """`payloadRecipe: "json-object-single-key-K-padded-string"` — same construction the
-    vector file documents (and this module's own bespoke predecessor already used)."""
-    skeleton_len = len(json.dumps({"K": ""}).encode("utf-8"))
+    """`payloadRecipe: "envelope-single-key-K-padded-string"` — the vector file's own recipe:
+    `{"values": {"K": pad}, "secretKeys": []}` padded to exactly `target_bytes`. The byte-size
+    cap this exercises (`transport._read_capped`) reads the raw body regardless of its JSON
+    shape, so the envelope skeleton is simply subtracted from the padding.
+
+    The recipe was a bare `{K: value}` map until bd:envpit-durd made that the rejected legacy
+    shape (`resolve-body.json`'s `legacy-bare-map-is-rejected`) — it was corrected in the shared
+    vector file, not worked around per language."""
+    skeleton_len = len(json.dumps({"values": {"K": ""}, "secretKeys": []}).encode("utf-8"))
     pad_length = target_bytes - skeleton_len
-    return json.dumps({"K": "v" * pad_length}).encode("utf-8")
+    return json.dumps({"values": {"K": "v" * pad_length}, "secretKeys": []}).encode("utf-8")
 
 
 def _build_unterminated_sse_line(target_bytes: int) -> str:
@@ -96,7 +102,7 @@ class TestBodySizeCap:
             return FakeHttpResponse(payload, headers={})
 
         snapshot, _etag = fetch_config(host=TEST_HOST, api_key="epk_test", timeout=1.0, urlopen=urlopen)
-        assert "K" in snapshot
+        assert "K" in snapshot.values
 
 
 class TestSseLineSizeCap:

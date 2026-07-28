@@ -22,6 +22,7 @@ import time
 import pytest
 
 from envpit.client import EnvpitClient
+from envpit.types import ConfigSnapshot
 
 from ._utils import wait_until
 
@@ -96,7 +97,7 @@ def test_bd_envpit_p261_fork_after_load_self_heals_background_refresh_in_the_chi
 
     def fetch(*, host: str, api_key: str, timeout: float):
         call_count["n"] += 1
-        return {"PORT": str(9090 + call_count["n"])}, None
+        return ConfigSnapshot({"PORT": str(9090 + call_count["n"])}), None
 
     client = EnvpitClient.load(api_key="epk_test", poll_interval=0.05, _fetch_impl=fetch)
     try:
@@ -176,7 +177,7 @@ def test_bd_envpit_p261_closed_client_never_resurrects_its_threads_on_an_unrelat
 
     def fetch(*, host: str, api_key: str, timeout: float):
         fetch_calls["n"] += 1
-        return {"K": "v"}, None
+        return ConfigSnapshot({"K": "v"}), None
 
     client = EnvpitClient.load(api_key="epk_test", poll_interval=0.05, _fetch_impl=fetch)
     client.close()
@@ -203,7 +204,7 @@ def test_bd_envpit_p261_poll_interval_zero_client_never_registers_a_fork_hook() 
     a process-wide callback for a client with no background state)."""
 
     def fetch(*, host: str, api_key: str, timeout: float):
-        return {"K": "v"}, None
+        return ConfigSnapshot({"K": "v"}), None
 
     client = EnvpitClient.load(api_key="epk_test", poll_interval=0, _fetch_impl=fetch)
     try:

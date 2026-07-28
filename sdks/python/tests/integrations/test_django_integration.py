@@ -26,7 +26,7 @@ def test_load_into_settings_writes_into_a_plain_dict() -> None:
 
     assert settings_globals["DATABASE_URL"] == "postgres://x"
     assert settings_globals["PORT"] == "9090"
-    assert written == {"DATABASE_URL", "PORT"}
+    assert written.merged == ("DATABASE_URL", "PORT")
 
 
 def test_load_into_settings_does_not_override_an_already_defined_setting_by_default() -> None:
@@ -36,7 +36,7 @@ def test_load_into_settings_does_not_override_an_already_defined_setting_by_defa
     written = load_into_settings(settings_globals, client=client)
 
     assert settings_globals["DEBUG"] is False  # untouched — the string "true" never overwrote it
-    assert written == set()
+    assert written.merged == ()
 
 
 def test_load_into_settings_override_true_overwrites() -> None:
@@ -46,7 +46,7 @@ def test_load_into_settings_override_true_overwrites() -> None:
     written = load_into_settings(settings_globals, client=client, override=True)
 
     assert settings_globals["ALLOWED_HOSTS"] == "example.com"
-    assert written == {"ALLOWED_HOSTS"}
+    assert written.merged == ("ALLOWED_HOSTS",)
 
 
 def test_load_into_settings_exclude_keeps_named_keys_out() -> None:
@@ -57,7 +57,33 @@ def test_load_into_settings_exclude_keeps_named_keys_out() -> None:
 
     assert "SECRET_KEY" not in settings_globals
     assert settings_globals["DATABASE_URL"] == "postgres://x"
-    assert written == {"DATABASE_URL"}
+    assert written.merged == ("DATABASE_URL",)
+
+
+def test_load_into_settings_excludes_server_flagged_secrets_by_default_bd_envpit_durd() -> None:
+    client = make_loaded_client(
+        {"SECRET_KEY": "hunter2", "DATABASE_URL": "postgres://x"}, secret_keys={"SECRET_KEY"}
+    )
+    settings_globals: dict[str, object] = {}
+
+    written = load_into_settings(settings_globals, client=client)
+
+    assert "SECRET_KEY" not in settings_globals
+    assert settings_globals["DATABASE_URL"] == "postgres://x"
+    assert written.merged == ("DATABASE_URL",)
+    assert written.skipped_secrets == ("SECRET_KEY",)
+
+
+def test_load_into_settings_include_secrets_true_opts_a_flagged_key_in() -> None:
+    client = make_loaded_client(
+        {"SECRET_KEY": "hunter2", "DATABASE_URL": "postgres://x"}, secret_keys={"SECRET_KEY"}
+    )
+    settings_globals: dict[str, object] = {}
+
+    written = load_into_settings(settings_globals, client=client, include_secrets=True)
+
+    assert settings_globals["SECRET_KEY"] == "hunter2"
+    assert written.merged == ("DATABASE_URL", "SECRET_KEY")
 
 
 def test_load_into_settings_used_via_exec_against_a_real_module_namespace() -> None:
@@ -77,4 +103,4 @@ def test_load_into_settings_used_via_exec_against_a_real_module_namespace() -> N
 
     assert module_namespace["SECRET_KEY"] == "hunter2"
     assert module_namespace["DEBUG"] is False
-    assert module_namespace["written"] == {"SECRET_KEY", "DEBUG"}
+    assert module_namespace["written"].merged == ("DEBUG", "SECRET_KEY")

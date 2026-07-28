@@ -19,6 +19,7 @@ from envpit.errors import (
     TypeMismatchError,
 )
 from envpit.realtime import RealtimeCallbacks, RealtimeTransport
+from envpit.types import ConfigSnapshot
 
 from ._utils import FakeSseStream, fetch_queue, wait_until
 
@@ -62,7 +63,7 @@ def test_inv_sdk_2_getters_after_load_never_trigger_a_network_call() -> None:
 
     def fetch(*, host: str, api_key: str, timeout: float) -> tuple:
         calls["n"] += 1
-        return {"K": "v"}, None
+        return ConfigSnapshot({"K": "v"}), None
 
     client = EnvpitClient.load(api_key="epk_test", poll_interval=0, _fetch_impl=fetch)
     try:
@@ -89,7 +90,7 @@ def test_inv_sdk_4_stale_while_revalidate_keeps_last_good_snapshot_on_refresh_fa
     def fetch(*, host: str, api_key: str, timeout: float) -> tuple:
         call_count["n"] += 1
         if call_count["n"] == 1:
-            return {"K": "v0"}, None
+            return ConfigSnapshot({"K": "v0"}), None
         raise NetworkError("simulated background refresh failure")
 
     client = EnvpitClient.load(api_key="epk_test", poll_interval=0, _fetch_impl=fetch)
@@ -114,11 +115,11 @@ def test_inv_sdk_5_generation_guard_out_of_order_success_response_is_discarded()
         call_index["n"] += 1
         n = call_index["n"]
         if n == 1:
-            return {"K": "v0"}, None  # initial load
+            return ConfigSnapshot({"K": "v0"}), None  # initial load
         if n == 2:
             release_first.wait(2.0)  # the FIRST-triggered refresh — deliberately delayed
-            return {"K": "stale"}, "etag-stale"
-        return {"K": "fresh"}, "etag-fresh"  # the SECOND-triggered refresh — resolves first
+            return ConfigSnapshot({"K": "stale"}), "etag-stale"
+        return ConfigSnapshot({"K": "fresh"}), "etag-fresh"  # the SECOND-triggered refresh — resolves first
 
     client = EnvpitClient.load(api_key="epk_test", poll_interval=0, _fetch_impl=fetch)
     try:
@@ -149,11 +150,11 @@ def test_inv_sdk_5_generation_guard_stale_failure_does_not_clobber_newer_success
         call_index["n"] += 1
         n = call_index["n"]
         if n == 1:
-            return {"K": "v0"}, None
+            return ConfigSnapshot({"K": "v0"}), None
         if n == 2:
             release_first.wait(2.0)
             raise NetworkError("stale failure — must be discarded, not clobber newer state")
-        return {"K": "fresh"}, "etag-fresh"
+        return ConfigSnapshot({"K": "fresh"}), "etag-fresh"
 
     client = EnvpitClient.load(api_key="epk_test", poll_interval=0, _fetch_impl=fetch)
     try:
@@ -283,7 +284,7 @@ def test_inv_sdk_9_etag_dedup_on_push_with_same_etag_does_not_trigger_a_refetch(
 
     def fetch(*, host: str, api_key: str, timeout: float) -> tuple:
         calls["n"] += 1
-        return {"K": "v0"}, "same-etag"
+        return ConfigSnapshot({"K": "v0"}), "same-etag"
 
     client = EnvpitClient.load(
         api_key="epk_test",
@@ -488,7 +489,7 @@ def test_inv_sdk_12_config_fetch_sends_x_api_key_header_and_never_authorization(
 
     def urlopen(request: object, timeout: float) -> FakeHttpResponse:
         seen_headers.update(dict(request.header_items()))  # type: ignore[attr-defined]
-        return FakeHttpResponse(b'{"K":"v"}', headers={})
+        return FakeHttpResponse(b'{"values":{"K":"v"},"secretKeys":[]}', headers={})
 
     fetch_config(host="https://example.test", api_key="epk_test", timeout=1.0, urlopen=urlopen)
 

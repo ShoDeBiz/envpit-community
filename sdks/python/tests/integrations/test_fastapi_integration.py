@@ -109,6 +109,45 @@ def test_env_prefix_is_respected() -> None:
     assert PrefixedSettings().database_url == "postgres://prefixed"
 
 
+def test_settings_field_excludes_a_server_flagged_secret_by_default_bd_envpit_durd() -> None:
+    client = make_loaded_client(
+        {"DATABASE_URL": "postgres://x", "DB_PASSWORD": "hunter2"}, secret_keys={"DB_PASSWORD"}
+    )
+
+    class Settings(BaseSettings):
+        database_url: str
+        db_password: str | None = None
+
+        @classmethod
+        def settings_customise_sources(
+            cls, settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings
+        ):
+            return (EnvpitSettingsSource(settings_cls, client=client),)
+
+    settings = Settings()
+    assert settings.database_url == "postgres://x"
+    assert settings.db_password is None  # excluded — falls through to the field's own default
+
+
+def test_settings_field_include_secrets_true_opts_a_flagged_key_in() -> None:
+    client = make_loaded_client(
+        {"DATABASE_URL": "postgres://x", "DB_PASSWORD": "hunter2"}, secret_keys={"DB_PASSWORD"}
+    )
+
+    class Settings(BaseSettings):
+        database_url: str
+        db_password: str | None = None
+
+        @classmethod
+        def settings_customise_sources(
+            cls, settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings
+        ):
+            return (EnvpitSettingsSource(settings_cls, client=client, include_secrets=True),)
+
+    settings = Settings()
+    assert settings.db_password == "hunter2"
+
+
 def test_importing_the_fastapi_integration_without_pydantic_settings_raises_a_clear_import_error(
     monkeypatch,
 ) -> None:

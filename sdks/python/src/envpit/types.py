@@ -1,18 +1,52 @@
 """Shared types for the EnvPit Python SDK.
 
-`ConfigSnapshot` mirrors the shipped Node SDK's shape 1:1 (key -> value map, secret-flagged
-keys already decrypted server-side, non-secret keys as-is). `Logger` is a structural (duck-typed)
-protocol — pass a stdlib `logging.Logger`, or any object exposing a subset of these methods;
-absent methods are simply never called (Sara §2.1: "silent by default, observable by choice").
+`ConfigSnapshot` mirrors the shipped Node SDK's shape 1:1 — the UNWRAPPED `{values, secretKeys}`
+resolve envelope (bd:envpit-durd, AC-SEC-E11): `values` is the key -> value map (secret-flagged
+keys already decrypted server-side, non-secret keys as-is — WHO can read a decrypted secret is
+unchanged by this shape, it only labels which keys are secret), `secret_keys` is the frozenset of
+key NAMES flagged `is_secret=true` server-side (never values — log-safe by construction, same
+convention as `ChangeEvent.changed_keys`). A secret key whose value is unset in this environment
+still appears in `secret_keys` while its `values` entry is `None` (the flag is key-level, not
+value-level; see `test-vectors/resolve-body.json`'s `unset-secret-is-still-listed` case).
+
+Every `get*()` getter reads ONLY `values` and is UNCHANGED by this shape — they still return
+secret values, same as before bd:envpit-durd (this is a labelling change, not an access-control
+change). Only the native-env-merge path (`_environ_merge.merge_snapshot`, `populate_environ()`,
+and the `flask`/`django` integrations) consults `secret_keys` to decide what to exclude.
+
+`Logger` is a structural (duck-typed) protocol — pass a stdlib `logging.Logger`, or any object
+exposing a subset of these methods; absent methods are simply never called (Sara §2.1: "silent by
+default, observable by choice").
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal, Protocol, runtime_checkable
 
-ConfigSnapshot = dict[str, str | None]
+
+@dataclass(frozen=True)
+class ConfigSnapshot:
+    """The unwrapped resolve envelope (bd:envpit-durd). `secret_keys` defaults to an empty
+    frozenset so test/internal call sites that only care about `values` (e.g. the
+    `snapshot-diff.json` vector family, which is explicitly values-only and unaffected by this
+    change) can construct one positionally: `ConfigSnapshot({"K": "v"})`."""
+
+    values: dict[str, str | None]
+    secret_keys: frozenset[str] = field(default_factory=frozenset)
+
+
+@dataclass(frozen=True)
+class MergeResult:
+    """Result of `EnvpitClient.populate_environ()` / `integrations.flask.init_app()` /
+    `integrations.django.load_into_settings()` — the shared `_environ_merge.merge_snapshot` core's
+    return shape (`test-vectors/env-merge.json`). All three fields are SORTED tuples of key NAMES
+    only — never values, log-safe by construction, same convention as `ChangeEvent.changed_keys`."""
+
+    merged: tuple[str, ...]
+    skipped_existing: tuple[str, ...]
+    skipped_secrets: tuple[str, ...]
 
 ChangeTrigger = Literal["push", "poll", "reconnect"]
 ConnectionMode = Literal["realtime", "polling"]

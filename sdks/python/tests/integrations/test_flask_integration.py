@@ -26,7 +26,7 @@ def test_init_app_merges_the_snapshot_into_app_config() -> None:
 
     assert app.config["DATABASE_URL"] == "postgres://x"
     assert app.config["PORT"] == "9090"
-    assert written == {"DATABASE_URL", "PORT"}
+    assert written.merged == ("DATABASE_URL", "PORT")
 
 
 def test_init_app_does_not_override_an_existing_app_config_value_by_default() -> None:
@@ -37,7 +37,7 @@ def test_init_app_does_not_override_an_existing_app_config_value_by_default() ->
     written = init_app(app, client=client)
 
     assert app.config["DATABASE_URL"] == "postgres://already-configured"
-    assert written == set()
+    assert written.merged == ()
 
 
 def test_init_app_override_true_overwrites_existing_app_config() -> None:
@@ -48,7 +48,7 @@ def test_init_app_override_true_overwrites_existing_app_config() -> None:
     written = init_app(app, client=client, override=True)
 
     assert app.config["DATABASE_URL"] == "postgres://from-envpit"
-    assert written == {"DATABASE_URL"}
+    assert written.merged == ("DATABASE_URL",)
 
 
 def test_init_app_exclude_keeps_named_keys_out_of_app_config() -> None:
@@ -61,7 +61,7 @@ def test_init_app_exclude_keeps_named_keys_out_of_app_config() -> None:
     # value never overwrote it, rather than "not in" (which Flask's own default would fail).
     assert app.config["SECRET_KEY"] is None
     assert app.config["DATABASE_URL"] == "postgres://x"
-    assert written == {"DATABASE_URL"}
+    assert written.merged == ("DATABASE_URL",)
 
 
 def test_init_app_skips_none_values() -> None:
@@ -72,6 +72,35 @@ def test_init_app_skips_none_values() -> None:
 
     assert "UNSET" not in app.config
     assert app.config["SET"] == "v"
+
+
+def test_init_app_excludes_secrets_by_default_bd_envpit_durd() -> None:
+    app = _make_app()
+    client = make_loaded_client(
+        {"DB_PASSWORD": "hunter2", "DATABASE_URL": "postgres://x"}, secret_keys={"DB_PASSWORD"}
+    )
+
+    written = init_app(app, client=client)
+
+    # Flask itself pre-seeds `app.config["SECRET_KEY"]` (unrelated name) — assert the
+    # server-flagged secret is simply absent, not overwritten to a Flask default.
+    assert "DB_PASSWORD" not in app.config
+    assert app.config["DATABASE_URL"] == "postgres://x"
+    assert written.merged == ("DATABASE_URL",)
+    assert written.skipped_secrets == ("DB_PASSWORD",)
+
+
+def test_init_app_include_secrets_true_opts_a_flagged_key_in() -> None:
+    app = _make_app()
+    client = make_loaded_client(
+        {"DB_PASSWORD": "hunter2", "DATABASE_URL": "postgres://x"}, secret_keys={"DB_PASSWORD"}
+    )
+
+    written = init_app(app, client=client, include_secrets=True)
+
+    assert app.config["DB_PASSWORD"] == "hunter2"
+    assert written.merged == ("DATABASE_URL", "DB_PASSWORD")
+    assert written.skipped_secrets == ()
 
 
 def test_init_app_uses_the_module_level_default_client_when_none_is_passed() -> None:
@@ -85,6 +114,6 @@ def test_init_app_uses_the_module_level_default_client_when_none_is_passed() -> 
     try:
         written = init_app(app)
         assert app.config["NAME"] == "envpit"
-        assert written == {"NAME"}
+        assert written.merged == ("NAME",)
     finally:
         envpit.close()

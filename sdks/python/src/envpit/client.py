@@ -48,6 +48,7 @@ from .types import (
     ConnectionMode,
     ConnectionReason,
     Logger,
+    MergeResult,
     RefreshMode,
 )
 
@@ -126,7 +127,7 @@ class EnvpitClient:
         self._fork_hook_registered = False
 
     def __repr__(self) -> str:  # AC-SEC-SDK3-1: value-free/key-free default representation
-        keys = len(self._snapshot) if self._snapshot is not None else 0
+        keys = len(self._snapshot.values) if self._snapshot is not None else 0
         return f"EnvpitClient(host={self._host!r}, keys={keys}, api_key=<redacted>)"
 
     __str__ = __repr__
@@ -374,46 +375,75 @@ class EnvpitClient:
     # ---- native-mechanism merge (bd:envpit-yvyr) -------------------------------
 
     def snapshot(self) -> dict[str, str | None]:
-        """A defensive (shallow) copy of the current in-memory config snapshot. Mutating the
-        returned dict never affects this client's own state — same in-memory-only, never-
-        network-call guarantee as every `get*()` call (INV-SDK-2/INV-SDK-3)."""
+        """A defensive (shallow) copy of the current in-memory config snapshot's VALUES (never
+        includes `secret_keys` — use `known_secret_keys()` for that). Mutating the returned dict
+        never affects this client's own state — same in-memory-only, never-network-call guarantee
+        as every `get*()` call (INV-SDK-2/INV-SDK-3). Unchanged by bd:envpit-durd: secret-flagged
+        values are still returned here exactly as before — this only labels which keys are
+        secret, it does not change who can read a decrypted secret."""
         if self._snapshot is None:
             raise RuntimeError(
                 "envpit: config not loaded yet — this should be unreachable via EnvpitClient.load()."
             )
-        return dict(self._snapshot)
+        return dict(self._snapshot.values)
+
+    def known_secret_keys(self) -> frozenset[str]:
+        """Public accessor (bd:envpit-durd, AC-SEC-E11) for the current snapshot's secret key
+        NAMES only — never values. Lets a caller write their own filter (e.g. before logging a
+        snapshot, or before handing values to a third-party tool) without re-fetching or
+        re-deriving the set `populate_environ()`/`integrations.flask.init_app()`/
+        `integrations.django.load_into_settings()` already use internally."""
+        return self._known_secret_keys()
 
     def _known_secret_keys(self) -> frozenset[str]:
-        """Prepared socket for server-provided secret metadata (Oliver, bd:envpit-yvyr, 2026-07-28
-        correction). ALWAYS empty today: `GET /v1/config` (`transport.fetch_config`) returns a
-        flat `key -> value` map with no `is_secret` field at all — verified against
-        `apps/api/src/config-management/config-resolve.controller.ts`'s documented response
-        schema (`additionalProperties: {type: 'string', nullable: true}`) and
-        `ConfigService.resolveEnvironmentSecretsInternal`'s `Record<string, string | null>`
-        return type in the main `envpit` repo. There is no signal here to filter on — NOT a
-        placeholder for a not-yet-written name heuristic (a heuristic would be wrong in both
-        directions: e.g. `DATABASE_URL` commonly embeds a password and would slip straight past
-        any "looks like SECRET/PASSWORD/TOKEN" pattern). The day the wire protocol adds
-        per-key secret metadata, only this method's body needs to change — every call site
-        (`populate_environ` below, `integrations/flask.py`, `integrations/django.py`) already
-        folds its result into the exclude set unconditionally."""
-        return frozenset()
+        """Internal accessor for the current snapshot's secret key names — the exclude-set input
+        for `populate_environ()`/`integrations/flask.py`/`integrations/django.py`. Backed by the
+        real `secretKeys` field of the `{values, secretKeys}` resolve envelope (bd:envpit-durd,
+        AC-SEC-E11), independently verified against `apps/api/src/config-management/
+        config-resolve.controller.ts`'s documented response schema in the main `envpit` repo.
+
+        Before bd:envpit-durd this always returned an empty `frozenset()` — the wire protocol had
+        no per-key secret signal at all, so there was nothing to report (see git history for that
+        prior state, and `bd:envpit-yvyr`'s original correction comment explaining the gap). That
+        gap is now closed: the server labels secret keys by name in every resolve response, so
+        this simply reads them off the loaded snapshot. No call site changed — `populate_environ`
+        below, `integrations/flask.py`, and `integrations/django.py` already folded this method's
+        result into their exclude set unconditionally; they now do the right thing automatically."""
+        if self._snapshot is None:
+            raise RuntimeError(
+                "envpit: config not loaded yet — this should be unreachable via EnvpitClient.load()."
+            )
+        return self._snapshot.secret_keys
 
     def populate_environ(
         self,
         *,
         override: bool = False,
+        include_secrets: bool = False,
+        only: Collection[str] | None = None,
         exclude: Collection[str] | None = None,
         environ: MutableMapping[str, str] | None = None,
-    ) -> set[str]:
+    ) -> MergeResult:
         """Merges the current snapshot into `os.environ` (or an injected `environ=` mapping —
         test-only seam, mirrors `_fetch_impl`/`urlopen`) so existing `os.environ.get("X")` call
         sites work unmodified — the "native mechanism" Oliver asked for (bd:envpit-yvyr).
 
-        NEVER called automatically by `load()` — this is an explicit, opt-in action, the only
-        posture that's honest given `_known_secret_keys()` can't yet tell secret values apart
-        from ordinary config (see its docstring). `exclude=` lets a caller who knows their own
-        secret key names keep them out by hand in the meantime.
+        NEVER called automatically by `load()` — this is an explicit, opt-in action.
+
+        Secrets are EXCLUDED BY DEFAULT (bd:envpit-durd, AC-SEC-E11 — the zero-argument call is
+        the safe one): a key flagged `is_secret=true` server-side (`known_secret_keys()`) is
+        skipped into the returned `MergeResult.skipped_secrets` unless `include_secrets=True` is
+        passed explicitly. Naming `include_secrets=True` at the call site IS the acknowledgment
+        that decrypted secret values will be written into `environ` — env vars are inherited by
+        every child process, are frequently serialized whole by APM/crash-reporting tools, and are
+        readable at `/proc/<pid>/environ` on Linux.
+
+        `only=`/`exclude=` are Python-local additions (no Node/Java equivalent; mirrors Go's
+        `WithOnly`/`WithExclude`) for a caller who wants to narrow the merge further by name:
+        `only=` is an allowlist (every other key is skipped as if never fetched); `exclude=` is a
+        denylist. Neither can pull a secret through the secret check — naming a secret key in
+        `only=` still requires `include_secrets=True` to actually merge it (see
+        `_environ_merge.py`'s module docstring for the full check order).
 
         A key already present in `environ` wins by default (no override) — same precedence
         `python-dotenv.load_dotenv()` uses; pass `override=True` to overwrite instead. A snapshot
@@ -427,11 +457,19 @@ class EnvpitClient:
         that needs guaranteed-live values should read through the client (`get()`/`get_int()`/
         etc.) instead of `environ`.
 
-        Returns the set of key NAMES actually written (never values — log-safe by construction).
+        Returns a `MergeResult` — three SORTED, values-free key-name tuples (`merged`,
+        `skipped_existing`, `skipped_secrets`) — log-safe by construction.
         """
         target: MutableMapping[str, str] = environ if environ is not None else os.environ
-        combined_exclude = frozenset(exclude or ()) | self._known_secret_keys()
-        return merge_snapshot(self.snapshot(), target, override=override, exclude=combined_exclude)
+        return merge_snapshot(
+            self.snapshot(),
+            target,
+            override=override,
+            only=only,
+            exclude=exclude,
+            secret_keys=self._known_secret_keys(),
+            include_secrets=include_secrets,
+        )
 
     def _read_raw(self, key: str) -> str | None:
         # Structurally unreachable via the public API: `load()` never returns a client without
@@ -440,7 +478,7 @@ class EnvpitClient:
             raise RuntimeError(
                 "envpit: config not loaded yet — this should be unreachable via EnvpitClient.load()."
             )
-        value = self._snapshot.get(key)
+        value = self._snapshot.values.get(key)
         return value if value is not None else None
 
     # ---- internal refresh machinery (INV-SDK-4/5) -----------------------------
@@ -533,7 +571,7 @@ class EnvpitClient:
         # torn state. No `change` on the very first load, and none when nothing actually
         # differs.
         if not is_first_load and previous_snapshot is not None:
-            changed_keys = _diff_snapshots(previous_snapshot, snapshot)
+            changed_keys = _diff_snapshots(previous_snapshot.values, snapshot.values)
             if changed_keys:
                 received_at = datetime.now(timezone.utc)
                 self._last_change_at = received_at
@@ -547,11 +585,15 @@ class EnvpitClient:
                 )
 
 
-def _diff_snapshots(previous: ConfigSnapshot, next_snapshot: ConfigSnapshot) -> list[str]:
-    """Computes changed key NAMES between two in-memory snapshots — never sent over the wire,
-    and never includes values (log-safe by construction). A key absent from a snapshot and a
-    key present-with-`None` are treated identically ("unset"), matching `_read_raw()`'s own
-    missing-vs-null equivalence."""
+def _diff_snapshots(
+    previous: dict[str, str | None], next_snapshot: dict[str, str | None]
+) -> list[str]:
+    """Computes changed key NAMES between two in-memory snapshots' VALUES — never sent over the
+    wire, and never includes values (log-safe by construction). Deliberately values-only and
+    unaffected by bd:envpit-durd's `secretKeys` addition (out of scope per that bd's own
+    decision): a `secretKeys`-only change (no `values` difference) is NOT a config change. A key
+    absent from a snapshot and a key present-with-`None` are treated identically ("unset"),
+    matching `_read_raw()`'s own missing-vs-null equivalence."""
     keys = set(previous.keys()) | set(next_snapshot.keys())
     changed = [key for key in keys if previous.get(key) != next_snapshot.get(key)]
     return sorted(changed)

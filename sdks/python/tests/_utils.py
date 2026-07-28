@@ -4,39 +4,63 @@ from __future__ import annotations
 
 import queue
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from typing import Any
 
 from envpit.client import EnvpitClient
 from envpit.types import ConfigSnapshot
 
+#: Anything a caller can hand to `fake_fetch_impl`/`fetch_queue`/`make_loaded_client` in place of
+#: a real `ConfigSnapshot` — a bare `dict[str, str | None]` (the overwhelming majority of this
+#: suite's tests, which only care about VALUES and are unaffected by bd:envpit-durd's
+#: `secretKeys` addition) is auto-wrapped into a `ConfigSnapshot` with an empty `secret_keys` by
+#: `_as_snapshot` below, so this convenience is zero-cost for every pre-existing call site.
+SnapshotLike = ConfigSnapshot | dict[str, "str | None"]
 
-def fake_fetch_impl(snapshot: ConfigSnapshot, etag: str | None = None) -> Callable[..., Any]:
+
+def _as_snapshot(snapshot: SnapshotLike, secret_keys: Collection[str] = ()) -> ConfigSnapshot:
+    if isinstance(snapshot, ConfigSnapshot):
+        if secret_keys:
+            raise AssertionError(
+                "pass secret_keys via the ConfigSnapshot itself, not alongside an already-built one"
+            )
+        return snapshot
+    return ConfigSnapshot(values=dict(snapshot), secret_keys=frozenset(secret_keys))
+
+
+def fake_fetch_impl(
+    snapshot: SnapshotLike, etag: str | None = None, secret_keys: Collection[str] = ()
+) -> Callable[..., Any]:
+    built = _as_snapshot(snapshot, secret_keys)
+
     def _fetch(*, host: str, api_key: str, timeout: float) -> tuple[ConfigSnapshot, str | None]:
-        return dict(snapshot), etag
+        return ConfigSnapshot(values=dict(built.values), secret_keys=built.secret_keys), etag
 
     return _fetch
 
 
-def fetch_queue(*results: tuple[ConfigSnapshot, str | None]) -> Callable[..., Any]:
+def fetch_queue(*results: tuple[SnapshotLike, str | None]) -> Callable[..., Any]:
     """Each call pops the next `(snapshot, etag)` pair. Raises loudly once exhausted — an
     unexpected extra fetch call fails the test instead of silently repeating stale data
     (mirrors Node test-utils' `routedFetch` "no response configured" philosophy)."""
-    remaining: list[tuple[ConfigSnapshot, str | None]] = list(results)
+    remaining: list[tuple[SnapshotLike, str | None]] = list(results)
 
     def _fetch(*, host: str, api_key: str, timeout: float) -> tuple[ConfigSnapshot, str | None]:
         if not remaining:
             raise AssertionError("fetch queue exhausted — unexpected extra fetch call")
         snapshot, etag = remaining.pop(0)
-        return dict(snapshot), etag
+        built = _as_snapshot(snapshot)
+        return ConfigSnapshot(values=dict(built.values), secret_keys=built.secret_keys), etag
 
     return _fetch
 
 
-def make_loaded_client(snapshot: ConfigSnapshot, **kwargs: Any) -> EnvpitClient:
+def make_loaded_client(
+    snapshot: SnapshotLike, secret_keys: Collection[str] = (), **kwargs: Any
+) -> EnvpitClient:
     kwargs.setdefault("poll_interval", 0)
     kwargs.setdefault("api_key", "epk_test")
-    fetch_impl = kwargs.pop("_fetch_impl", None) or fake_fetch_impl(snapshot)
+    fetch_impl = kwargs.pop("_fetch_impl", None) or fake_fetch_impl(snapshot, secret_keys=secret_keys)
     return EnvpitClient.load(_fetch_impl=fetch_impl, **kwargs)
 
 

@@ -34,6 +34,7 @@ from .types import (
     ConnectionMode,
     ConnectionReason,
     Logger,
+    MergeResult,
 )
 
 __all__ = [
@@ -44,6 +45,7 @@ __all__ = [
     "MissingKeyError",
     "TypeMismatchError",
     "ConfigSnapshot",
+    "MergeResult",
     "ChangeEvent",
     "ChangeTrigger",
     "ConnectionEvent",
@@ -154,13 +156,17 @@ def cache_info() -> CacheInfo:
 def populate_environ(
     *,
     override: bool = False,
+    include_secrets: bool = False,
+    only: Collection[str] | None = None,
     exclude: Collection[str] | None = None,
     environ: MutableMapping[str, str] | None = None,
-) -> set[str]:
+) -> MergeResult:
     """Module-sugar delegate for `EnvpitClient.populate_environ()` — see its docstring
     (`client.py`) for the full contract (opt-in only, no-override-by-default, boot-time
-    snapshot, no secret filtering — bd:envpit-yvyr)."""
-    return _require_default().populate_environ(override=override, exclude=exclude, environ=environ)
+    snapshot, secrets excluded by default — bd:envpit-yvyr, bd:envpit-durd)."""
+    return _require_default().populate_environ(
+        override=override, include_secrets=include_secrets, only=only, exclude=exclude, environ=environ
+    )
 
 
 def close() -> None:

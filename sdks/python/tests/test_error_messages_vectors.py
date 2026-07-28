@@ -14,6 +14,7 @@ import pytest
 
 from envpit.client import EnvpitClient
 from envpit.transport import fetch_config
+from envpit.types import ConfigSnapshot
 
 from ._utils import FakeHttpResponse
 from ._vectors import load_vectors
@@ -75,7 +76,7 @@ def test_error_message_vector(case: dict, monkeypatch: pytest.MonkeyPatch) -> No
         method_name = GETTER_KIND_TO_METHOD[getter["kind"]]
 
         def fetch(*, host: str, api_key: str, timeout: float) -> tuple:
-            return dict(getter["snapshot"]), None
+            return ConfigSnapshot(dict(getter["snapshot"])), None
 
         client = EnvpitClient.load(api_key="epk_test", host=TEST_HOST, poll_interval=0, _fetch_impl=fetch)
         try:
@@ -99,7 +100,7 @@ def test_error_message_vector(case: dict, monkeypatch: pytest.MonkeyPatch) -> No
         def fetch(*, host: str, api_key: str, timeout: float) -> tuple:
             call_count["n"] += 1
             if call_count["n"] == 1:
-                return {"K": "v0"}, None
+                return ConfigSnapshot({"K": "v0"}), None
             urlopen = _urlopen_for({"status": condition["status"]})
             # Drive the REAL transport-layer mapping so the composed message is genuine,
             # not hand-authored — matches error-messages.json's own documented composition

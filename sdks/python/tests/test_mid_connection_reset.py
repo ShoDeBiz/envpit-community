@@ -93,7 +93,7 @@ def test_bd_envpit_4dbm_background_refresh_records_network_error_not_the_raw_exc
     def flip_urlopen(request, timeout):  # noqa: ANN001, ANN202
         calls["n"] += 1
         if calls["n"] == 1:
-            return FakeHttpResponse(b'{"K":"v0"}', headers={})
+            return FakeHttpResponse(b'{"values":{"K":"v0"},"secretKeys":[]}', headers={})
         raise http.client.RemoteDisconnected("Remote end closed connection without response")
 
     client = EnvpitClient.load(
@@ -127,7 +127,7 @@ def test_bd_envpit_4dbm_on_error_fires_for_a_mid_connection_reset_on_background_
     def flip_urlopen(request, timeout):  # noqa: ANN001, ANN202
         calls["n"] += 1
         if calls["n"] == 1:
-            return FakeHttpResponse(b'{"K":"v0"}', headers={})
+            return FakeHttpResponse(b'{"values":{"K":"v0"},"secretKeys":[]}', headers={})
         raise http.client.RemoteDisconnected("Remote end closed connection without response")
 
     client = EnvpitClient.load(
@@ -161,10 +161,10 @@ def test_bd_envpit_4dbm_background_refresh_self_heals_once_the_connection_stops_
     def flip_urlopen(request, timeout):  # noqa: ANN001, ANN202
         calls["n"] += 1
         if calls["n"] == 1:
-            return FakeHttpResponse(b'{"K":"v0"}', headers={})
+            return FakeHttpResponse(b'{"values":{"K":"v0"},"secretKeys":[]}', headers={})
         if calls["n"] == 2:
             raise http.client.RemoteDisconnected("Remote end closed connection without response")
-        return FakeHttpResponse(b'{"K":"v1"}', headers={})
+        return FakeHttpResponse(b'{"values":{"K":"v1"},"secretKeys":[]}', headers={})
 
     client = EnvpitClient.load(
         api_key="epk_test",

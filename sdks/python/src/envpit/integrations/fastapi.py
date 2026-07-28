@@ -56,11 +56,23 @@ class EnvpitSettingsSource(PydanticBaseSettingsSource):
 
     A field absent from the snapshot resolves to `None` here, which pydantic-settings then falls
     through to that field's own default (or raises `ValidationError` if the field is required) —
-    the same "no value found" contract every other settings source in the chain follows."""
+    the same "no value found" contract every other settings source in the chain follows.
 
-    def __init__(self, settings_cls: type[BaseSettings], client: EnvpitClient | None = None) -> None:
+    Secrets are EXCLUDED BY DEFAULT (bd:envpit-durd, AC-SEC-E11 — same default posture as
+    `EnvpitClient.populate_environ()`/the `flask`/`django` integrations): a field whose matching
+    key is flagged `is_secret=true` server-side resolves as "not found" here, which
+    pydantic-settings then falls through to for a caller who wants secrets available through
+    `Settings` fields at all."""
+
+    def __init__(
+        self,
+        settings_cls: type[BaseSettings],
+        client: EnvpitClient | None = None,
+        include_secrets: bool = False,
+    ) -> None:
         super().__init__(settings_cls)
         self._client = client
+        self._include_secrets = include_secrets
         self._env_prefix = str(self.config.get("env_prefix") or "").upper()
 
     def _resolved_client(self) -> EnvpitClient:
@@ -72,8 +84,11 @@ class EnvpitSettingsSource(PydanticBaseSettingsSource):
 
     def get_field_value(self, field: FieldInfo, field_name: str) -> tuple[Any, str, bool]:
         target_key = self._env_prefix + field_name.upper()
-        for key, value in self._resolved_client().snapshot().items():
+        client = self._resolved_client()
+        for key, value in client.snapshot().items():
             if key.upper() == target_key:
+                if not self._include_secrets and key in client.known_secret_keys():
+                    return None, field_name, False
                 return value, field_name, False
         return None, field_name, False
 

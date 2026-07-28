@@ -114,7 +114,61 @@ def _parse_json_body(body: bytes, url: str) -> ConfigSnapshot:
         raise NetworkError(f"EnvPit returned an invalid JSON response from {url}.") from exc
     if not isinstance(parsed, dict):
         raise NetworkError(f"EnvPit returned an invalid JSON response from {url}.")
-    return parsed
+    return _unwrap_resolve_envelope(parsed, url)
+
+
+def _unwrap_resolve_envelope(parsed: dict[str, Any], url: str) -> ConfigSnapshot:
+    """bd:envpit-durd, AC-SEC-E11 — validates and unwraps the `{values, secretKeys}` envelope.
+    `test-vectors/resolve-body.json` is the authoritative spec for every branch below (16 cases,
+    all consumed by `tests/test_resolve_body_vectors.py`); this function must not diverge from it.
+
+    A pre-durd bare `{key: value}` map — or any other shape that isn't this exact envelope — maps
+    onto the SAME `NetworkError` class every other malformed-response case uses (there is no
+    dedicated "legacy server" error type, per `error-mapping.json`'s `invalid-json-body` case):
+    accepting the bare shape would silently mean `secretKeys = []`, which the env-merge path
+    (`_environ_merge.merge_snapshot`) would read as "this environment has no secrets" and merge
+    production secrets into a caller's environment while reporting that it excluded them. There
+    were zero published SDK releases when bd:envpit-durd landed, so failing loudly against a
+    pre-durd server is the safe direction with nothing to break.
+    """
+    if "values" not in parsed or "secretKeys" not in parsed:
+        raise NetworkError(
+            f"EnvPit returned an invalid JSON response from {url} (missing 'values' or "
+            "'secretKeys' — this SDK requires a server that has adopted the bd:envpit-durd "
+            "config-resolve envelope; a pre-durd bare key/value map is no longer accepted)."
+        )
+
+    values = parsed["values"]
+    if not isinstance(values, dict):
+        raise NetworkError(
+            f"EnvPit returned an invalid JSON response from {url} ('values' is not an object)."
+        )
+    for key, value in values.items():
+        if value is not None and not isinstance(value, str):
+            raise NetworkError(
+                f"EnvPit returned an invalid JSON response from {url} (the value for config key "
+                f'"{key}" is not a string).'
+            )
+
+    secret_keys_raw = parsed["secretKeys"]
+    if not isinstance(secret_keys_raw, list):
+        raise NetworkError(
+            f"EnvPit returned an invalid JSON response from {url} ('secretKeys' is not an array)."
+        )
+    for name in secret_keys_raw:
+        if not isinstance(name, str):
+            raise NetworkError(
+                f"EnvPit returned an invalid JSON response from {url} ('secretKeys' contains a "
+                "non-string entry)."
+            )
+
+    # `secretKeys` naming a key absent from `values` is tolerated, not an error (the two lists
+    # come from the same server-side query, but a client that hard-failed on a name it couldn't
+    # cross-reference would turn any future server-side widening of `secretKeys` into an outage —
+    # see `secret-key-absent-from-values-is-tolerated` in the vector file). Unknown extra envelope
+    # fields (e.g. a future `futureField`) are silently ignored — only `values`/`secretKeys` are
+    # load-bearing.
+    return ConfigSnapshot(values=values, secret_keys=frozenset(secret_keys_raw))
 
 
 def _describe_failure(exc: urllib.error.URLError) -> str:

@@ -28,20 +28,25 @@ immediately, but can't retroactively update `os.environ` (nothing can — this i
 `os.environ`/Spring `@Value` in every language, not an EnvPit limitation). Code that needs
 guaranteed-live values should read through the client instead — see "Client API" below.
 
-**⚠️ Known limitation — no automatic secret filtering.** `populate_environ()` is never called
-automatically (you always opt in explicitly), but it also cannot tell which keys are secrets: the
-resolve endpoint this SDK calls returns a flat `key -> value` map with no `is_secret` metadata
-(the endpoint that DOES know is guarded by session auth, a separate trust boundary this SDK's
-API-key auth can't reach — bd:envpit-yvyr). If you're merging secrets into `os.environ`, know
-that env vars are inherited by every child process, are often serialized into crash
-dumps/APM/`/proc/<pid>/environ`, and are logged by some startup scripts. Use `exclude={"MY_SECRET_KEY", ...}`
-to keep specific keys out by hand until the server ships secret metadata.
+**Secrets are excluded by default.** The server labels each config key `is_secret=true`/`false`
+(bd:envpit-durd); `populate_environ()` reads that flag and skips every secret-flagged key unless
+you pass `include_secrets=True` — the zero-argument call is the safe one. Env vars are inherited
+by every child process, are often serialized into crash dumps/APM/`/proc/<pid>/environ`, and are
+logged by some startup scripts, so opting a whole environment's secrets into `os.environ` is a
+real exposure — naming `include_secrets=True` at the call site is the acknowledgment of that.
+`only=`/`exclude=` additionally narrow the merge by name (an allowlist/denylist, mirroring the Go
+SDK's `WithOnly`/`WithExclude`) — neither can pull a secret through without `include_secrets=True`
+also being set.
 
 ```python
-envpit.load().populate_environ(
-    override=False,                       # default: existing os.environ values always win
-    exclude={"DB_PASSWORD", "JWT_SECRET"}, # keep these out of os.environ by name
+result = envpit.load().populate_environ(
+    override=False,          # default: existing os.environ values always win
+    include_secrets=False,   # default: server-flagged secret keys are never merged
+    exclude={"LEGACY_KEY"},  # keep specific non-secret keys out too, by name
 )
+result.merged            # sorted tuple of key NAMES actually written
+result.skipped_existing  # sorted tuple of key NAMES left alone (already present, no override)
+result.skipped_secrets   # sorted tuple of key NAMES excluded because they're secret-flagged
 ```
 
 ### Client API (in-memory reads, no `os.environ`)
@@ -112,7 +117,11 @@ DEBUG = DEBUG == "true"   # every EnvPit value is a string — typed post-proces
 ```
 
 All three integrations share `populate_environ()`'s precedence rules (existing value wins unless
-`override=True`) and the same secret-filtering limitation described above (`exclude=` param).
+`override=True`) and its secret-exclusion default: server-flagged secrets are excluded unless
+`include_secrets=True` is passed to `init_app()`/`load_into_settings()`. FastAPI's
+`EnvpitSettingsSource` follows the same default via its own `include_secrets=True` constructor
+argument (an excluded secret field simply falls back to that field's own default, same as an
+absent key).
 
 ## API
 
@@ -135,8 +144,11 @@ client.get_int("PORT", 8080)                     # int; raises TypeMismatchError
 client.get_bool("MAINTENANCE_MODE", False)       # bool: true/1/yes/on, false/0/no/off (ci)
 client.get_optional("PORT")                      # str | None — the only getter that never raises
 
-client.snapshot()                                # dict[str, str | None] — defensive copy, in-memory only
-client.populate_environ(override=False, exclude=None, environ=None)  # see Quickstart above
+client.snapshot()                                # dict[str, str | None] — defensive copy, in-memory only (values only)
+client.known_secret_keys()                       # frozenset[str] — server-flagged secret key NAMES only
+client.populate_environ(                         # see Quickstart above; returns a MergeResult
+    override=False, include_secrets=False, only=None, exclude=None, environ=None,
+)
 
 unsubscribe = client.on_change(lambda event: ...)   # event: ChangeEvent (key names only)
 client.on_connection(lambda event: ...)             # event: ConnectionEvent
@@ -201,6 +213,11 @@ path).
   both are always shown redacted.
 - Response bodies and realtime stream lines are size-capped (5 MiB / 64 KiB respectively) so a
   misbehaving or compromised server can't exhaust client memory.
+- The config-resolve response must be the post-bd:envpit-durd `{values, secretKeys}` envelope —
+  a pre-durd bare `{key: value}` map is rejected as a `NetworkError`, not silently accepted (it
+  would otherwise read as "no secrets here" and merge production secrets while reporting none
+  excluded). There were zero published SDK releases before this shape shipped, so this only
+  matters if you're pointed at a very old self-hosted EnvPit server.
 
 ## Requirements
 
