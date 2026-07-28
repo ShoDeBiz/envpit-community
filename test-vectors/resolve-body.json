@@ -1,0 +1,96 @@
+{
+  "description": "Wire shape of the config-resolve 200 body: `{ \"values\": {key: string|null}, \"secretKeys\": [string] }` (bd:envpit-durd, AC-SEC-E11). `body` is the raw decoded JSON the transport received; `expected` is either `{\"values\": ..., \"secretKeys\": [...]}` (the unwrapped snapshot the client goes on to serve) or `{\"expectedError\": \"NetworkError\"}` — the SAME class error-mapping.json's `invalid-json-body` case uses, because a body that parses as JSON but is not this envelope is a malformed response, not a distinct new failure mode. Ground truth: envpit (main repo) apps/api/src/config-management/config-resolve.controller.ts (both `ApiKeyConfigResolveController` and the key-scope-inferred `ApiKeyScopedConfigResolveController` return the identical shape) + config.service.ts `resolveEnvironmentSecretsInternal`.",
+  "notes": {
+    "breakingChange": "Before bd:envpit-durd the same route returned a BARE `{key: value}` map with no secret labelling at all. That shape is deliberately REJECTED here rather than accepted as a legacy fallback: a bare map silently means `secretKeys = []`, which every native-env-merge path (see env-merge.json) would read as 'this environment has no secrets' and merge production secrets into the process environment while reporting that it excluded them. Failing loudly against a pre-durd server is the safe direction. There were zero published SDK releases when this landed, so no real consumer is broken by the strictness.",
+    "secretKeysIsNamesOnly": "`secretKeys` NEVER carries a value — only the names of `is_secret=true` keys. The flag is key-level, not value-level, so a secret key whose value is unset in this environment still appears in `secretKeys` while its `values` entry is `null` (`unset-secret-is-still-listed` below).",
+    "javaErrorName": "Java's taxonomy names this class `NetworkException`; the mapping is the one already established by error-mapping.json, not a new one."
+  },
+  "cases": [
+    {
+      "name": "envelope-happy-path",
+      "body": { "values": { "API_URL": "https://api.example.com", "DB_PASSWORD": "hunter2" }, "secretKeys": ["DB_PASSWORD"] },
+      "expected": { "values": { "API_URL": "https://api.example.com", "DB_PASSWORD": "hunter2" }, "secretKeys": ["DB_PASSWORD"] }
+    },
+    {
+      "name": "no-secrets-in-this-environment",
+      "body": { "values": { "API_URL": "https://api.example.com" }, "secretKeys": [] },
+      "expected": { "values": { "API_URL": "https://api.example.com" }, "secretKeys": [] }
+    },
+    {
+      "name": "empty-environment",
+      "body": { "values": {}, "secretKeys": [] },
+      "expected": { "values": {}, "secretKeys": [] }
+    },
+    {
+      "name": "unset-secret-is-still-listed",
+      "body": { "values": { "DB_PASSWORD": null }, "secretKeys": ["DB_PASSWORD"] },
+      "expected": { "values": { "DB_PASSWORD": null }, "secretKeys": ["DB_PASSWORD"] }
+    },
+    {
+      "name": "every-key-is-secret",
+      "body": { "values": { "A": "1", "B": "2" }, "secretKeys": ["A", "B"] },
+      "expected": { "values": { "A": "1", "B": "2" }, "secretKeys": ["A", "B"] }
+    },
+    {
+      "name": "secret-key-absent-from-values-is-tolerated",
+      "body": { "values": { "A": "1" }, "secretKeys": ["GONE"] },
+      "expected": { "values": { "A": "1" }, "secretKeys": ["GONE"] },
+      "why": "Not an error: the two lists are built from the same query server-side, but a client that hard-failed on a name it could not cross-reference would turn any future server-side widening of `secretKeys` into an outage. An unmatched name simply excludes nothing."
+    },
+    {
+      "name": "legacy-bare-map-is-rejected",
+      "body": { "API_URL": "https://api.example.com", "DB_PASSWORD": "hunter2" },
+      "expectedError": "NetworkError",
+      "why": "The pre-durd shape. See notes.breakingChange — accepting it would mean merging secrets while reporting none were found."
+    },
+    {
+      "name": "legacy-empty-map-is-rejected-too",
+      "body": {},
+      "expectedError": "NetworkError",
+      "why": "`{}` is ambiguous between 'pre-durd server, empty environment' and 'new server that dropped both fields'. Rejecting it keeps the envelope check total — there is no body that is valid only by accident."
+    },
+    {
+      "name": "values-missing-is-rejected",
+      "body": { "secretKeys": [] },
+      "expectedError": "NetworkError"
+    },
+    {
+      "name": "secret-keys-missing-is-rejected",
+      "body": { "values": { "A": "1" } },
+      "expectedError": "NetworkError"
+    },
+    {
+      "name": "values-not-an-object-is-rejected",
+      "body": { "values": [], "secretKeys": [] },
+      "expectedError": "NetworkError"
+    },
+    {
+      "name": "values-null-is-rejected",
+      "body": { "values": null, "secretKeys": [] },
+      "expectedError": "NetworkError"
+    },
+    {
+      "name": "secret-keys-not-an-array-is-rejected",
+      "body": { "values": { "A": "1" }, "secretKeys": "DB_PASSWORD" },
+      "expectedError": "NetworkError",
+      "why": "A bare string is iterable character-by-character in several of these languages — accepted, it would produce a secretKeys set of single letters that matches nothing."
+    },
+    {
+      "name": "secret-keys-containing-a-non-string-is-rejected",
+      "body": { "values": { "A": "1" }, "secretKeys": ["A", 7] },
+      "expectedError": "NetworkError"
+    },
+    {
+      "name": "non-string-value-inside-values-is-rejected",
+      "body": { "values": { "PORT": 3333 }, "secretKeys": [] },
+      "expectedError": "NetworkError",
+      "why": "Unchanged from the pre-durd contract — every config value crosses the wire as a JSON string or null. This case only re-asserts that the check moved INSIDE `values` rather than being dropped during the unwrap."
+    },
+    {
+      "name": "unknown-extra-envelope-field-is-ignored",
+      "body": { "values": { "A": "1" }, "secretKeys": [], "futureField": { "anything": true } },
+      "expected": { "values": { "A": "1" }, "secretKeys": [] },
+      "why": "Forward compatibility: the envelope may grow. Only `values` and `secretKeys` are load-bearing."
+    }
+  ]
+}

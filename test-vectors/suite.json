@@ -1,6 +1,6 @@
 {
-  "suiteVersion": "1.1.0",
-  "description": "Language-agnostic behavioral fixture suite for every EnvPit SDK. Frozen per suiteVersion — any change touches all shipped SDKs in one PR (bd:envpit-0t2z.3 Slice 0; 1.1.0 backfills 2 families — error-messages, adversarial-payloads — that were referenced in design docs/threat model but did not land with Slice 0's original 6, flagged during Python implementation).",
+  "suiteVersion": "1.2.0",
+  "description": "Language-agnostic behavioral fixture suite for every EnvPit SDK. Frozen per suiteVersion — any change touches all shipped SDKs in one PR (bd:envpit-0t2z.3 Slice 0; 1.1.0 backfills 2 families — error-messages, adversarial-payloads — that were referenced in design docs/threat model but did not land with Slice 0's original 6, flagged during Python implementation; 1.2.0 adds resolve-body + env-merge, the first families whose ground truth is the SERVER contract rather than Node's shipped behavior — bd:envpit-durd's `{values, secretKeys}` wire shape and the bd:envpit-yvyr native-environment merge it unblocks).",
   "families": [
     "sse-frames",
     "push-payloads",
@@ -9,7 +9,9 @@
     "error-mapping",
     "hashing",
     "error-messages",
-    "adversarial-payloads"
+    "adversarial-payloads",
+    "resolve-body",
+    "env-merge"
   ],
   "sourceOfTruth": {
     "sse-frames": "envpit-community/sdks/node/src/sse-parser.ts (SseFrameParser) — first extracted from sdks/node/test/realtime-adversarial.test.ts:74-116",
@@ -19,6 +21,8 @@
     "error-mapping": "envpit-community/sdks/node/src/transport.ts (fetchConfig) — first extracted from sdks/node/test/client.test.ts",
     "hashing": "envpit/libs/shared/src/flag-evaluation-vectors.ts (FLAG_BUCKET_GOLDEN_VECTORS, GOLDEN_VECTOR_SALT) + flag-evaluator.ts (computeFlagBucket doc comment) — main envpit repo, canonical ground truth for bd:envpit-0t2z.6 rollout bucketing. Forward provision: no shipped SDK language consumes this yet (Feature Flags SDK work belongs to bd:envpit-0t2z.6), reserved here per SPEC-envpit-0t2z-3-1a-architecture.md §6 so the format anticipates it and every language proves identical bucketing against the SAME ground truth from day one.",
     "error-messages": "envpit-community/sdks/node/src/{errors,client,transport}.ts + sdks/python/src/envpit/{errors,client,transport}.py (both read in full, real shipped literal strings verified) for the node/python columns; outputs/SPEC-envpit-0t2z-3-1b-ux.md §2.2 (Uma) for the forward-provisioned go/java columns (no shipped Go/Java SDK yet). Backfilled bd:envpit-0t2z.3 (2 missing families flagged during the Python implementation dispatch).",
-    "adversarial-payloads": "outputs/THREATMODEL-envpit-0t2z-3.md F2 / AC-SEC-SDK3-2 (Sentinel) for the required caps; envpit-community/sdks/python/src/envpit/{transport,sse_parser}.py for the real, shipped cap implementation (Node has no equivalent cap yet — documented parity gap, bd:envpit-aw7l, not fixed by this backfill). Backfilled bd:envpit-0t2z.3, superseding sdks/python/tests/test_json_caps.py's prior Python-only bespoke stopgap coverage of the same concern."
+    "adversarial-payloads": "outputs/THREATMODEL-envpit-0t2z-3.md F2 / AC-SEC-SDK3-2 (Sentinel) for the required caps; envpit-community/sdks/python/src/envpit/{transport,sse_parser}.py for the real, shipped cap implementation (Node has no equivalent cap yet — documented parity gap, bd:envpit-aw7l, not fixed by this backfill). Backfilled bd:envpit-0t2z.3, superseding sdks/python/tests/test_json_caps.py's prior Python-only bespoke stopgap coverage of the same concern.",
+    "resolve-body": "envpit (MAIN repo) apps/api/src/config-management/config-resolve.controller.ts — the @ApiResponse schema on BOTH resolve routes — plus config.service.ts's resolveEnvironmentSecretsInternal, which builds `values`/`secretKeys` from the same rows. Note the direction: unlike every family above, the ground truth here is the SERVER, not Node — all four SDKs were parsing the pre-durd bare map when this family was written, so this file is a spec they had to be brought UP to, not an extraction of existing behavior (bd:envpit-durd).",
+    "env-merge": "envpit-community/sdks/node/src/process-env-merge.ts (mergeSnapshotIntoEnv) for the merge/skip/sort mechanics, which predate this family; the secret-exclusion rule itself comes from bd:envpit-durd's server contract (see resolve-body above) — before it there was no per-key secret signal on the wire and the merge could only take all keys or none."
   }
 }

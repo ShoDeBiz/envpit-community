@@ -19,7 +19,7 @@ whatever inputs/expectations that family needs — see each file for its exact s
 single generic case schema across families because the families test structurally different
 things (parser input/output, HTTP-condition/error-type mapping, etc.).
 
-## Families (suiteVersion 1.1.0)
+## Families (suiteVersion 1.2.0)
 
 | File | What it tests | Consumed by Node today? | Consumed by Python today? |
 |---|---|---|---|
@@ -31,6 +31,28 @@ things (parser input/output, HTTP-condition/error-type mapping, etc.).
 | `hashing.json` | SHA-256 rollout-bucketing determinism | **Not yet** — forward provision for bd:envpit-0t2z.6 (Feature Flags SDK support); no shipped SDK language buckets anything today. Reserved now so Python/Go/Java prove identical bucketing against the exact ground truth (`envpit` main repo's `libs/shared/src/flag-evaluation-vectors.ts`) from day one. | Yes — `sdks/python/tests/test_hashing_vectors.py` |
 | `error-messages.json` | Per-language MESSAGE TEXT/SHAPE for the 4-class error taxonomy (Uma DX spec flag #6) — a different concern from `error-mapping.json` (type only, not text) | Yes — `sdks/node/test/vectors/error-messages.vectors.test.ts` | Yes — `sdks/python/tests/test_error_messages_vectors.py` |
 | `adversarial-payloads.json` | Malformed/oversized/deeply-nested JSON body + SSE line vectors (Sentinel AC-SEC-SDK3-2) — parser must never crash/hang/OOM | Partial — `sdks/node/test/vectors/adversarial-payloads.vectors.test.ts` consumes every case; 2 of 8 are documented GAP-canary assertions (Node has no body/SSE-line byte cap yet, tracked bd:envpit-aw7l) rather than hard pass/fail | Yes, fully — `sdks/python/tests/test_adversarial_payloads_vectors.py` (Python implements both caps for real) |
+| `resolve-body.json` | Config-resolve 200 body -> unwrapped `{values, secretKeys}`, or rejection (bd:envpit-durd) | Yes — `sdks/node/test/vectors/resolve-body.vectors.test.ts` | Yes — `sdks/python/tests/test_resolve_body_vectors.py` |
+| `env-merge.json` | Snapshot + existing env + options -> `{merged, skippedExisting, skippedSecrets}` (bd:envpit-yvyr) | Yes — `sdks/node/test/vectors/env-merge.vectors.test.ts` | Yes — `sdks/python/tests/test_env_merge_vectors.py` |
+
+The two-column table above predates the Go and Java SDKs and is kept as-is rather than rewritten;
+both new families are consumed by all FOUR languages, every case, no skips —
+`sdks/go/envpit/vectors_test.go` (`TestVectorsResolveBody`, `TestVectorsEnvMerge`) and
+`sdks/java/src/test/java/com/envpit/{VectorsResolveBodyTest,VectorsEnvMergeTest}.java` alongside
+the Node/Python files listed.
+
+### What changed in 1.2.0
+
+`resolve-body.json` and `env-merge.json` are the first families whose ground truth is the SERVER
+contract rather than Node's shipped behavior: when they were written, all four SDKs were still
+parsing the pre-durd bare `{key: value}` map, so these files are a spec the SDKs had to be brought
+UP to, not an extraction of what already worked.
+
+`adversarial-payloads.json` was also amended: its `payloadRecipe` built a bare `{"K": pad}` map,
+which the strict envelope turns into the rejected legacy shape — making its one "accept"
+body-size-cap case unsatisfiable by any conforming client. Each language had independently patched
+its own local helper to keep that case green, which is exactly the silent per-language divergence
+this directory exists to prevent, so the recipe was corrected here instead (see that file's own
+`description` for the full note).
 
 `error-messages.json` and `adversarial-payloads.json` were backfilled after Slice 0 (bd:envpit-0t2z.3):
 both were referenced in the design docs / Sentinel's threat model but did not actually land with

@@ -1,7 +1,7 @@
 {
   "openapi": "3.0.0",
   "paths": {
-    "/v1/auth/register": {
+    "/api/v1/auth/register": {
       "post": {
         "operationId": "AuthController_register",
         "parameters": [],
@@ -15,7 +15,7 @@
         ]
       }
     },
-    "/v1/auth/login": {
+    "/api/v1/auth/login": {
       "post": {
         "operationId": "AuthController_login",
         "parameters": [],
@@ -29,7 +29,7 @@
         ]
       }
     },
-    "/v1/auth/refresh": {
+    "/api/v1/auth/refresh": {
       "post": {
         "operationId": "AuthController_refresh",
         "parameters": [],
@@ -43,7 +43,7 @@
         ]
       }
     },
-    "/v1/auth/logout": {
+    "/api/v1/auth/logout": {
       "post": {
         "operationId": "AuthController_logout",
         "parameters": [],
@@ -57,7 +57,7 @@
         ]
       }
     },
-    "/v1/auth/password-reset/request": {
+    "/api/v1/auth/password-reset/request": {
       "post": {
         "operationId": "AuthController_requestPasswordReset",
         "parameters": [],
@@ -71,7 +71,7 @@
         ]
       }
     },
-    "/v1/auth/password-reset/confirm": {
+    "/api/v1/auth/password-reset/confirm": {
       "post": {
         "operationId": "AuthController_confirmPasswordReset",
         "parameters": [],
@@ -85,7 +85,7 @@
         ]
       }
     },
-    "/v1/auth/me": {
+    "/api/v1/auth/me": {
       "get": {
         "operationId": "AuthController_me",
         "parameters": [],
@@ -99,7 +99,7 @@
         ]
       }
     },
-    "/v1/auth/me/orgs": {
+    "/api/v1/auth/me/orgs": {
       "get": {
         "operationId": "AuthController_meOrgs",
         "parameters": [],
@@ -113,7 +113,7 @@
         ]
       }
     },
-    "/v1/auth/oauth/{provider}": {
+    "/api/v1/auth/oauth/{provider}": {
       "get": {
         "operationId": "OAuthController_start",
         "parameters": [
@@ -136,7 +136,7 @@
         ]
       }
     },
-    "/v1/auth/oauth/{provider}/callback": {
+    "/api/v1/auth/oauth/{provider}/callback": {
       "get": {
         "operationId": "OAuthController_callback",
         "parameters": [
@@ -175,7 +175,7 @@
         ]
       }
     },
-    "/v1/auth/oauth/exchange": {
+    "/api/v1/auth/oauth/exchange": {
       "post": {
         "operationId": "OAuthController_exchange",
         "parameters": [],
@@ -189,7 +189,7 @@
         ]
       }
     },
-    "/v1/auth/mfa/enroll": {
+    "/api/v1/auth/mfa/enroll": {
       "post": {
         "operationId": "MfaController_enroll",
         "parameters": [],
@@ -203,7 +203,7 @@
         ]
       }
     },
-    "/v1/auth/mfa/verify": {
+    "/api/v1/auth/mfa/verify": {
       "post": {
         "operationId": "MfaController_verify",
         "parameters": [],
@@ -217,7 +217,167 @@
         ]
       }
     },
-    "/v1/orgs/{orgId}/projects": {
+    "/api/v1/orgs/{orgId}/members": {
+      "get": {
+        "operationId": "MembershipController_list",
+        "parameters": [
+          {
+            "name": "orgId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Membership"
+        ]
+      },
+      "post": {
+        "operationId": "MembershipController_add",
+        "parameters": [
+          {
+            "name": "orgId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Membership"
+        ]
+      }
+    },
+    "/api/v1/orgs/{orgId}/members/{userId}": {
+      "patch": {
+        "operationId": "MembershipController_changeRole",
+        "parameters": [
+          {
+            "name": "orgId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Membership"
+        ]
+      },
+      "delete": {
+        "operationId": "MembershipController_remove",
+        "parameters": [
+          {
+            "name": "orgId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Membership"
+        ]
+      }
+    },
+    "/api/v1/orgs": {
+      "get": {
+        "operationId": "OrgController_myOrgs",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Org"
+        ]
+      }
+    },
+    "/api/v1/feedback": {
+      "post": {
+        "operationId": "FeedbackController_submit",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Feedback"
+        ]
+      }
+    },
+    "/api/v1/demo-requests": {
+      "post": {
+        "operationId": "DemoRequestController_submit",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "DemoRequest"
+        ]
+      }
+    },
+    "/api/v1/rum/vitals": {
+      "post": {
+        "operationId": "RumController_submit",
+        "parameters": [],
+        "responses": {
+          "202": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Rum"
+        ]
+      }
+    },
+    "/api/v1/orgs/{orgId}/projects": {
       "get": {
         "operationId": "OrgProjectsController_list",
         "parameters": [],
@@ -243,7 +403,7 @@
         ]
       }
     },
-    "/v1/projects/{id}": {
+    "/api/v1/projects/{id}": {
       "get": {
         "operationId": "ProjectController_get",
         "parameters": [
@@ -308,7 +468,7 @@
         ]
       }
     },
-    "/v1/projects/{projectId}/environments": {
+    "/api/v1/projects/{projectId}/environments": {
       "get": {
         "operationId": "ProjectEnvironmentsController_list",
         "parameters": [
@@ -352,7 +512,7 @@
         ]
       }
     },
-    "/v1/environments/{id}": {
+    "/api/v1/environments/{id}": {
       "get": {
         "operationId": "EnvironmentController_get",
         "parameters": [
@@ -373,9 +533,1026 @@
         "tags": [
           "Environment"
         ]
+      },
+      "delete": {
+        "operationId": "EnvironmentController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Environment"
+        ]
       }
     },
-    "/v1/projects/{id}/api-keys": {
+    "/api/v1/projects/{projectId}/config-keys": {
+      "get": {
+        "operationId": "ProjectConfigKeysController_list",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "ProjectConfigKeys"
+        ]
+      },
+      "post": {
+        "operationId": "ProjectConfigKeysController_create",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "ProjectConfigKeys"
+        ]
+      }
+    },
+    "/api/v1/projects/{projectId}/secrets": {
+      "get": {
+        "operationId": "ProjectSecretsController_list",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found / not in caller's org (anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Secrets Management dashboard — every secret-flagged config item across every environment of this project, with last-accessed + rotation-reminder metadata. Never a value.",
+        "tags": [
+          "secrets"
+        ]
+      }
+    },
+    "/api/v1/environments/{envId}/configs": {
+      "get": {
+        "operationId": "EnvironmentConfigsController_list",
+        "parameters": [
+          {
+            "name": "envId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "EnvironmentConfigs"
+        ]
+      }
+    },
+    "/api/v1/config-items/{id}": {
+      "get": {
+        "operationId": "ConfigItemController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Config item not found / not in caller's org (anti-enumeration — never 403 for this case).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "config-items"
+        ]
+      }
+    },
+    "/api/v1/config-items/{id}/versions": {
+      "get": {
+        "operationId": "ConfigItemController_versions",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Config item not found / not in caller's org (anti-enumeration — never 403 for this case).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "config-items"
+        ]
+      }
+    },
+    "/api/v1/config-items/{id}/versions/{versionNo}": {
+      "get": {
+        "operationId": "ConfigItemController_version",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "versionNo",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Config item not found / not in caller's org (anti-enumeration — never 403 for this case).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "config-items"
+        ]
+      }
+    },
+    "/api/v1/config-items/{id}/reveal": {
+      "get": {
+        "operationId": "ConfigItemController_reveal",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Config item not found / not in caller's org (anti-enumeration — never 403 for this case).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "config-items"
+        ]
+      }
+    },
+    "/api/v1/config-items/{id}/rollback": {
+      "post": {
+        "operationId": "ConfigItemController_rollback",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Config-item (cell) id.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "toVersion"
+                ],
+                "properties": {
+                  "toVersion": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "changeNote": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Rollback applied — the new (latest) version. Secret-flagged cells return `value: null` (masked, same as every other non-reveal response).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "configKeyId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "key": {
+                      "type": "string"
+                    },
+                    "environmentId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "versionNo": {
+                      "type": "integer"
+                    },
+                    "value": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`toVersion` is already the current version.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but not member+ in this org.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Config item not found / not in caller's org (anti-enumeration — never 403 for this case).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Roll back this cell to an earlier version (copies its value into a new, latest version — never mutates history).",
+        "tags": [
+          "config-items"
+        ]
+      }
+    },
+    "/api/v1/config-keys/{keyId}/environments/{envId}": {
+      "put": {
+        "operationId": "ConfigKeyEnvironmentController_setValue",
+        "parameters": [
+          {
+            "name": "keyId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "envId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "ConfigKeyEnvironment"
+        ]
+      }
+    },
+    "/api/v1/config-keys/{keyId}/promote": {
+      "post": {
+        "operationId": "ConfigKeyPromoteController_promote",
+        "parameters": [
+          {
+            "name": "keyId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "fromEnvironmentId",
+                  "toEnvironmentId"
+                ],
+                "properties": {
+                  "fromEnvironmentId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "toEnvironmentId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "changeNote": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Promotion applied — the target environment's new (latest) version. Secret-flagged cells return `value: null` (masked, never the promoted plaintext).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "configKeyId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "key": {
+                      "type": "string"
+                    },
+                    "environmentId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "versionNo": {
+                      "type": "integer"
+                    },
+                    "value": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`fromEnvironmentId` equals `toEnvironmentId`, or the value fails value_type validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing/invalid JWT (never satisfied by an X-Api-Key header).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role tier for this key (member for non-secret, admin+ for secret), an active impersonated session on a secret key, or the AC-SEC-P9 production-declassification rule.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Key/environment not found, or outside the caller's org/project (anti-enumeration — never 403 for this case).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Secret-path rate limit exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Promote this variable's current value from one environment to another. Secrets are decrypted and re-encrypted through the normal write path (fresh DEK) — never a raw ciphertext copy.",
+        "tags": [
+          "config-promote"
+        ]
+      }
+    },
+    "/api/v1/orgs/{orgId}/tags": {
+      "get": {
+        "operationId": "OrgTagsController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "OrgTags"
+        ]
+      },
+      "post": {
+        "operationId": "OrgTagsController_create",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "OrgTags"
+        ]
+      }
+    },
+    "/api/v1/tags/{id}": {
+      "patch": {
+        "operationId": "TagController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Tag"
+        ]
+      },
+      "delete": {
+        "operationId": "TagController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Tag"
+        ]
+      }
+    },
+    "/api/v1/config-keys/{keyId}/tags": {
+      "post": {
+        "operationId": "ConfigKeyTagsController_assign",
+        "parameters": [
+          {
+            "name": "keyId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "ConfigKeyTags"
+        ]
+      }
+    },
+    "/api/v1/config-keys/{keyId}/tags/{tagId}": {
+      "delete": {
+        "operationId": "ConfigKeyTagsController_unassign",
+        "parameters": [
+          {
+            "name": "keyId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tagId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "ConfigKeyTags"
+        ]
+      }
+    },
+    "/api/v1/orgs/{orgId}/search": {
+      "get": {
+        "operationId": "OrgSearchController_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "OrgSearch"
+        ]
+      }
+    },
+    "/api/v1/orgs/{orgId}/audit": {
+      "get": {
+        "operationId": "OrgAuditController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "OrgAudit"
+        ]
+      }
+    },
+    "/api/v1/projects/{projectId}/environments/{environmentId}/config": {
+      "get": {
+        "operationId": "ApiKeyConfigResolveController_resolve",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "description": "Conditional GET (bd:envpit-a9d) — the ETag from a previous response; a match returns 304 with no body, no decrypt, no KMS unwrap.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "`{ values, secretKeys }` (bd:envpit-durd, AC-SEC-E11 — breaking change from the pre-durd bare key -> value map, adopted with zero published consumers). `values` is the key -> value map: secret-flagged keys are decrypted, non-secret keys are returned as-is — WHO sees a decrypted secret is unchanged by this shape, this only labels which keys are secret. `secretKeys` lists ONLY the names of `is_secret=true` keys (never their values) — an unset secret still appears here even though its `values` entry is `null`, because the flag is key-level, not value-level. Carries an `ETag` header (bd:envpit-a9d) for conditional-GET revalidation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "values",
+                    "secretKeys"
+                  ],
+                  "properties": {
+                    "values": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string",
+                        "nullable": true
+                      }
+                    },
+                    "secretKeys": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "example": {
+                    "values": {
+                      "API_URL": "https://api.example.com",
+                      "DB_PASSWORD": "hunter2"
+                    },
+                    "secretKeys": [
+                      "DB_PASSWORD"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "If-None-Match matched the environment's current fingerprint — nothing changed, no body, no decrypt (bd:envpit-a9d, AC-SEC-E10)."
+          },
+          "401": {
+            "description": "Missing/unknown/revoked/expired API key (single generic reason, anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project/environment outside this key's scope (anti-enumeration — never 403).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Per-key rate limit exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "summary": "Fetch this environment's resolved config (plain values as-is, secrets decrypted). Never cached.",
+        "tags": [
+          "config-resolve"
+        ]
+      }
+    },
+    "/api/v1/config": {
+      "get": {
+        "operationId": "ApiKeyScopedConfigResolveController_resolve",
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "description": "Conditional GET (bd:envpit-a9d) — the ETag from a previous response; a match returns 304 with no body, no decrypt, no KMS unwrap.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "`{ values, secretKeys }` (bd:envpit-durd, AC-SEC-E11 — breaking change from the pre-durd bare key -> value map, adopted with zero published consumers). `values` is the key -> value map: secret-flagged keys are decrypted, non-secret keys are returned as-is — WHO sees a decrypted secret is unchanged by this shape, this only labels which keys are secret. `secretKeys` lists ONLY the names of `is_secret=true` keys (never their values) — an unset secret still appears here even though its `values` entry is `null`, because the flag is key-level, not value-level. Carries an `ETag` header (bd:envpit-a9d) for conditional-GET revalidation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "values",
+                    "secretKeys"
+                  ],
+                  "properties": {
+                    "values": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string",
+                        "nullable": true
+                      }
+                    },
+                    "secretKeys": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "example": {
+                    "values": {
+                      "API_URL": "https://api.example.com",
+                      "DB_PASSWORD": "hunter2"
+                    },
+                    "secretKeys": [
+                      "DB_PASSWORD"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "If-None-Match matched the environment's current fingerprint — nothing changed, no body, no decrypt (bd:envpit-a9d, AC-SEC-E10)."
+          },
+          "400": {
+            "description": "This key is not scoped to a single environment (project-wildcard key) — no environment to infer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing/unknown/revoked/expired API key (single generic reason, anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The key's own scope no longer resolves to a real project/environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Per-key rate limit exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "summary": "Fetch the resolved config for the environment this API key is scoped to (plain values as-is, secrets decrypted). Never cached.",
+        "tags": [
+          "config-resolve"
+        ]
+      }
+    },
+    "/api/v1/projects/{id}/api-keys": {
       "post": {
         "operationId": "ProjectApiKeysController_create",
         "parameters": [
@@ -529,7 +1706,7 @@
         ]
       }
     },
-    "/v1/api-keys/{id}/rotate": {
+    "/api/v1/api-keys/{id}/rotate": {
       "post": {
         "operationId": "ApiKeyController_rotate",
         "parameters": [
@@ -597,7 +1774,7 @@
         ]
       }
     },
-    "/v1/api-keys/{id}": {
+    "/api/v1/api-keys/{id}": {
       "delete": {
         "operationId": "ApiKeyController_revoke",
         "parameters": [
@@ -751,963 +1928,7 @@
         ]
       }
     },
-    "/v1/projects/{projectId}/config-keys": {
-      "get": {
-        "operationId": "ProjectConfigKeysController_list",
-        "parameters": [
-          {
-            "name": "projectId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "ProjectConfigKeys"
-        ]
-      },
-      "post": {
-        "operationId": "ProjectConfigKeysController_create",
-        "parameters": [
-          {
-            "name": "projectId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "ProjectConfigKeys"
-        ]
-      }
-    },
-    "/v1/projects/{projectId}/secrets": {
-      "get": {
-        "operationId": "ProjectSecretsController_list",
-        "parameters": [
-          {
-            "name": "projectId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "401": {
-            "description": "Missing/invalid JWT.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Project not found / not in caller's org (anti-enumeration).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Secrets Management dashboard — every secret-flagged config item across every environment of this project, with last-accessed + rotation-reminder metadata. Never a value.",
-        "tags": [
-          "secrets"
-        ]
-      }
-    },
-    "/v1/environments/{envId}/configs": {
-      "get": {
-        "operationId": "EnvironmentConfigsController_list",
-        "parameters": [
-          {
-            "name": "envId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "EnvironmentConfigs"
-        ]
-      }
-    },
-    "/v1/config-items/{id}": {
-      "get": {
-        "operationId": "ConfigItemController_get",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "401": {
-            "description": "Missing/invalid JWT.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Config item not found / not in caller's org (anti-enumeration — never 403 for this case).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "tags": [
-          "config-items"
-        ]
-      }
-    },
-    "/v1/config-items/{id}/versions": {
-      "get": {
-        "operationId": "ConfigItemController_versions",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "401": {
-            "description": "Missing/invalid JWT.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Config item not found / not in caller's org (anti-enumeration — never 403 for this case).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "tags": [
-          "config-items"
-        ]
-      }
-    },
-    "/v1/config-items/{id}/versions/{versionNo}": {
-      "get": {
-        "operationId": "ConfigItemController_version",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "versionNo",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "number"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "401": {
-            "description": "Missing/invalid JWT.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Config item not found / not in caller's org (anti-enumeration — never 403 for this case).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "tags": [
-          "config-items"
-        ]
-      }
-    },
-    "/v1/config-items/{id}/reveal": {
-      "get": {
-        "operationId": "ConfigItemController_reveal",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "401": {
-            "description": "Missing/invalid JWT.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Config item not found / not in caller's org (anti-enumeration — never 403 for this case).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "tags": [
-          "config-items"
-        ]
-      }
-    },
-    "/v1/config-items/{id}/rollback": {
-      "post": {
-        "operationId": "ConfigItemController_rollback",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "Config-item (cell) id.",
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "toVersion"
-                ],
-                "properties": {
-                  "toVersion": {
-                    "type": "integer",
-                    "minimum": 1
-                  },
-                  "changeNote": {
-                    "type": "string",
-                    "maxLength": 500
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Rollback applied — the new (latest) version. Secret-flagged cells return `value: null` (masked, same as every other non-reveal response).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "configKeyId": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "key": {
-                      "type": "string"
-                    },
-                    "environmentId": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "versionNo": {
-                      "type": "integer"
-                    },
-                    "value": {
-                      "type": "string",
-                      "nullable": true
-                    },
-                    "updatedAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "`toVersion` is already the current version.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing/invalid JWT.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Authenticated, but not member+ in this org.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Config item not found / not in caller's org (anti-enumeration — never 403 for this case).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Roll back this cell to an earlier version (copies its value into a new, latest version — never mutates history).",
-        "tags": [
-          "config-items"
-        ]
-      }
-    },
-    "/v1/config-keys/{keyId}/environments/{envId}": {
-      "put": {
-        "operationId": "ConfigKeyEnvironmentController_setValue",
-        "parameters": [
-          {
-            "name": "keyId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "envId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "ConfigKeyEnvironment"
-        ]
-      }
-    },
-    "/v1/config-keys/{keyId}/promote": {
-      "post": {
-        "operationId": "ConfigKeyPromoteController_promote",
-        "parameters": [
-          {
-            "name": "keyId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "fromEnvironmentId",
-                  "toEnvironmentId"
-                ],
-                "properties": {
-                  "fromEnvironmentId": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "toEnvironmentId": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "changeNote": {
-                    "type": "string",
-                    "maxLength": 500
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Promotion applied — the target environment's new (latest) version. Secret-flagged cells return `value: null` (masked, never the promoted plaintext).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "configKeyId": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "key": {
-                      "type": "string"
-                    },
-                    "environmentId": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "versionNo": {
-                      "type": "integer"
-                    },
-                    "value": {
-                      "type": "string",
-                      "nullable": true
-                    },
-                    "updatedAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "`fromEnvironmentId` equals `toEnvironmentId`, or the value fails value_type validation.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing/invalid JWT (never satisfied by an X-Api-Key header).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Insufficient role tier for this key (member for non-secret, admin+ for secret), an active impersonated session on a secret key, or the AC-SEC-P9 production-declassification rule.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Key/environment not found, or outside the caller's org/project (anti-enumeration — never 403 for this case).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Secret-path rate limit exceeded.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Promote this variable's current value from one environment to another. Secrets are decrypted and re-encrypted through the normal write path (fresh DEK) — never a raw ciphertext copy.",
-        "tags": [
-          "config-promote"
-        ]
-      }
-    },
-    "/v1/orgs/{orgId}/tags": {
-      "get": {
-        "operationId": "OrgTagsController_list",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "OrgTags"
-        ]
-      },
-      "post": {
-        "operationId": "OrgTagsController_create",
-        "parameters": [],
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "OrgTags"
-        ]
-      }
-    },
-    "/v1/tags/{id}": {
-      "patch": {
-        "operationId": "TagController_update",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "Tag"
-        ]
-      },
-      "delete": {
-        "operationId": "TagController_remove",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "Tag"
-        ]
-      }
-    },
-    "/v1/config-keys/{keyId}/tags": {
-      "post": {
-        "operationId": "ConfigKeyTagsController_assign",
-        "parameters": [
-          {
-            "name": "keyId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "ConfigKeyTags"
-        ]
-      }
-    },
-    "/v1/config-keys/{keyId}/tags/{tagId}": {
-      "delete": {
-        "operationId": "ConfigKeyTagsController_unassign",
-        "parameters": [
-          {
-            "name": "keyId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "tagId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "ConfigKeyTags"
-        ]
-      }
-    },
-    "/v1/orgs/{orgId}/search": {
-      "get": {
-        "operationId": "OrgSearchController_get",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "OrgSearch"
-        ]
-      }
-    },
-    "/v1/orgs/{orgId}/audit": {
-      "get": {
-        "operationId": "OrgAuditController_list",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "OrgAudit"
-        ]
-      }
-    },
-    "/v1/projects/{projectId}/environments/{environmentId}/config": {
-      "get": {
-        "operationId": "ApiKeyConfigResolveController_resolve",
-        "parameters": [
-          {
-            "name": "projectId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "name": "environmentId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "name": "If-None-Match",
-            "in": "header",
-            "description": "Conditional GET (bd:envpit-a9d) — the ETag from a previous response; a match returns 304 with no body, no decrypt, no KMS unwrap.",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "key -> value map. Secret-flagged keys are decrypted; non-secret keys are returned as-is. Carries an `ETag` header (bd:envpit-a9d) for conditional-GET revalidation.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string",
-                    "nullable": true
-                  },
-                  "example": {
-                    "API_URL": "https://api.example.com",
-                    "DB_PASSWORD": "hunter2"
-                  }
-                }
-              }
-            }
-          },
-          "304": {
-            "description": "If-None-Match matched the environment's current fingerprint — nothing changed, no body, no decrypt (bd:envpit-a9d, AC-SEC-E10)."
-          },
-          "401": {
-            "description": "Missing/unknown/revoked/expired API key (single generic reason, anti-enumeration).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Project/environment outside this key's scope (anti-enumeration — never 403).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Per-key rate limit exceeded.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "ApiKey": []
-          }
-        ],
-        "summary": "Fetch this environment's resolved config (plain values as-is, secrets decrypted). Never cached.",
-        "tags": [
-          "config-resolve"
-        ]
-      }
-    },
-    "/v1/config": {
-      "get": {
-        "operationId": "ApiKeyScopedConfigResolveController_resolve",
-        "parameters": [
-          {
-            "name": "If-None-Match",
-            "in": "header",
-            "description": "Conditional GET (bd:envpit-a9d) — the ETag from a previous response; a match returns 304 with no body, no decrypt, no KMS unwrap.",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "key -> value map. Secret-flagged keys are decrypted; non-secret keys are returned as-is. Carries an `ETag` header (bd:envpit-a9d) for conditional-GET revalidation.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string",
-                    "nullable": true
-                  },
-                  "example": {
-                    "API_URL": "https://api.example.com",
-                    "DB_PASSWORD": "hunter2"
-                  }
-                }
-              }
-            }
-          },
-          "304": {
-            "description": "If-None-Match matched the environment's current fingerprint — nothing changed, no body, no decrypt (bd:envpit-a9d, AC-SEC-E10)."
-          },
-          "400": {
-            "description": "This key is not scoped to a single environment (project-wildcard key) — no environment to infer.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing/unknown/revoked/expired API key (single generic reason, anti-enumeration).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "The key's own scope no longer resolves to a real project/environment.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Per-key rate limit exceeded.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetailsDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "ApiKey": []
-          }
-        ],
-        "summary": "Fetch the resolved config for the environment this API key is scoped to (plain values as-is, secrets decrypted). Never cached.",
-        "tags": [
-          "config-resolve"
-        ]
-      }
-    },
-    "/v1/projects/{projectId}/environments/{environmentId}/config/events": {
+    "/api/v1/projects/{projectId}/environments/{environmentId}/config/events": {
       "get": {
         "operationId": "ApiKeyConfigEventsController_streamEvents",
         "parameters": [
@@ -1779,7 +2000,7 @@
         ]
       }
     },
-    "/v1/config/events": {
+    "/api/v1/config/events": {
       "get": {
         "operationId": "ApiKeyScopedConfigEventsController_streamEvents",
         "parameters": [],
@@ -1836,6 +2057,1608 @@
         "summary": "Realtime config-change notifications for the environment this API key is scoped to (SSE, bd:envpit-a9d).",
         "tags": [
           "config-events"
+        ]
+      }
+    },
+    "/api/v1/projects/{projectId}/feature-flags": {
+      "get": {
+        "operationId": "ProjectFeatureFlagsController_list",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "List flags defined in this project, with per-environment state summary (Sara §7).",
+        "tags": [
+          "ProjectFeatureFlags"
+        ]
+      },
+      "post": {
+        "operationId": "ProjectFeatureFlagsController_create",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Create a flag — materializes an unset (Off) cell in every environment of the project (FR-001).",
+        "tags": [
+          "ProjectFeatureFlags"
+        ]
+      }
+    },
+    "/api/v1/feature-flags/{flagId}": {
+      "get": {
+        "operationId": "FeatureFlagController_get",
+        "parameters": [
+          {
+            "name": "flagId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Flag not found / not in caller's org (anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "feature-flags"
+        ]
+      },
+      "delete": {
+        "operationId": "FeatureFlagController_archive",
+        "parameters": [
+          {
+            "name": "flagId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Flag not found / not in caller's org (anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Archive this flag — soft-delete across every environment; version/audit history preserved (FR-009, AC-SEC-F8).",
+        "tags": [
+          "feature-flags"
+        ]
+      }
+    },
+    "/api/v1/feature-flags/{flagId}/unarchive": {
+      "post": {
+        "operationId": "FeatureFlagController_unarchive",
+        "parameters": [
+          {
+            "name": "flagId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Flag not found / not in caller's org (anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Un-archive this flag — restores it to the active list with configuration intact (FR-009).",
+        "tags": [
+          "feature-flags"
+        ]
+      }
+    },
+    "/api/v1/feature-flags/{flagId}/environments/{envId}": {
+      "put": {
+        "operationId": "FeatureFlagController_setDocument",
+        "parameters": [
+          {
+            "name": "flagId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "envId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Flag not found / not in caller's org (anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Configure this flag's document in one environment — new version + audit (THE write, Sara §7).",
+        "tags": [
+          "feature-flags"
+        ]
+      }
+    },
+    "/api/v1/feature-flags/{flagId}/environments/{envId}/kill": {
+      "post": {
+        "operationId": "FeatureFlagController_kill",
+        "parameters": [
+          {
+            "name": "flagId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "envId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Flag not found / not in caller's org (anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Kill switch — forces every evaluation to false immediately; underlying config is preserved, not reset (FR-003a).",
+        "tags": [
+          "feature-flags"
+        ]
+      }
+    },
+    "/api/v1/feature-flags/{flagId}/environments/{envId}/restore": {
+      "post": {
+        "operationId": "FeatureFlagController_restore",
+        "parameters": [
+          {
+            "name": "flagId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "envId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Flag not found / not in caller's org (anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Restores a killed flag to its preserved configuration.",
+        "tags": [
+          "feature-flags"
+        ]
+      }
+    },
+    "/api/v1/flag-environments/{id}": {
+      "get": {
+        "operationId": "FlagEnvironmentController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Cell not found / not in caller's org (anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "flag-environments"
+        ]
+      }
+    },
+    "/api/v1/flag-environments/{id}/versions": {
+      "get": {
+        "operationId": "FlagEnvironmentController_versions",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Cell not found / not in caller's org (anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "flag-environments"
+        ]
+      }
+    },
+    "/api/v1/flag-environments/{id}/versions/{versionNo}": {
+      "get": {
+        "operationId": "FlagEnvironmentController_version",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "versionNo",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Cell not found / not in caller's org (anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "flag-environments"
+        ]
+      }
+    },
+    "/api/v1/flag-environments/{id}/rollback": {
+      "post": {
+        "operationId": "FlagEnvironmentController_rollback",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Cell not found / not in caller's org (anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Roll back this cell to an earlier version (copies its document into a new, latest version — never mutates history).",
+        "tags": [
+          "flag-environments"
+        ]
+      }
+    },
+    "/api/v1/flag-environments/{id}/evaluate": {
+      "post": {
+        "operationId": "FlagEnvironmentController_evaluate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Cell not found / not in caller's org (anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Preview-evaluate this cell against a test context — {context} -> {result, reason}. Never logs/persists context (AC-SEC-F9).",
+        "tags": [
+          "flag-environments"
+        ]
+      }
+    },
+    "/api/v1/projects/{projectId}/environments/{environmentId}/flags": {
+      "get": {
+        "operationId": "ApiKeyFlagResolveController_resolve",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "description": "Conditional GET — a match returns 304 with no body, metadata-only fingerprint query.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "304": {
+            "description": "If-None-Match matched the environment's current flags fingerprint."
+          },
+          "401": {
+            "description": "Missing/unknown/revoked/expired API key (single generic reason, anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project/environment outside this key's scope (anti-enumeration — never 403).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Per-key rate limit exceeded (independent flags-resolve budget, AC-SEC-F5).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "summary": "Fetch this environment's non-archived flag documents + salts (SDK-local evaluation source). Never cached.",
+        "tags": [
+          "flags-resolve"
+        ]
+      }
+    },
+    "/api/v1/projects/{projectId}/environments/{environmentId}/flags/evaluate": {
+      "post": {
+        "operationId": "ApiKeyFlagResolveController_evaluate",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/unknown/revoked/expired API key (single generic reason, anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project/environment outside this key's scope (anti-enumeration — never 403).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Per-key rate limit exceeded (independent flags-resolve budget, AC-SEC-F5).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "summary": "Server-side bulk evaluate convenience (curl/CI/non-SDK consumers) — {context} -> {\"<flag-key>\": bool}. Never a production per-request path (documented, rate-bounded). Never echoes context (AC-SEC-F9).",
+        "tags": [
+          "flags-resolve"
+        ]
+      }
+    },
+    "/api/v1/flags": {
+      "get": {
+        "operationId": "ApiKeyScopedFlagResolveController_resolve",
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "304": {
+            "description": "If-None-Match matched."
+          },
+          "400": {
+            "description": "This key is not scoped to a single environment (project-wildcard key) — no environment to infer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing/unknown/revoked/expired API key (single generic reason, anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The key's own scope no longer resolves to a real project/environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Per-key rate limit exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "summary": "Fetch the resolved flags for the environment this API key is scoped to. Never cached.",
+        "tags": [
+          "flags-resolve"
+        ]
+      }
+    },
+    "/api/v1/orgs/{id}/admin/members": {
+      "get": {
+        "operationId": "OrgAdminController_listMembers",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Org id.",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but insufficient role in this org.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Org not found / not the caller's org (anti-enumeration — never 403 for this case).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List this org's members and their roles.",
+        "tags": [
+          "org-admin"
+        ]
+      }
+    },
+    "/api/v1/orgs/{id}/admin/members/{userId}/role": {
+      "patch": {
+        "operationId": "OrgAdminController_changeMemberRole",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "description": "Target member's user id.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Org id.",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but insufficient role in this org.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Org not found / not the caller's org (anti-enumeration — never 403 for this case).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Change a member's role (owner only).",
+        "tags": [
+          "org-admin"
+        ]
+      }
+    },
+    "/api/v1/orgs/{id}/admin/members/{userId}": {
+      "delete": {
+        "operationId": "OrgAdminController_removeMember",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "description": "Target member's user id.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Org id.",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but insufficient role in this org.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Org not found / not the caller's org (anti-enumeration — never 403 for this case).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove a member from this org (owner only).",
+        "tags": [
+          "org-admin"
+        ]
+      }
+    },
+    "/api/v1/orgs/{id}/admin/api-keys": {
+      "get": {
+        "operationId": "OrgAdminController_listApiKeys",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Org id.",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but insufficient role in this org.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Org not found / not the caller's org (anti-enumeration — never 403 for this case).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List this org's project API keys (metadata only — never key secret material).",
+        "tags": [
+          "org-admin"
+        ]
+      }
+    },
+    "/api/v1/orgs/{id}/admin/audit": {
+      "get": {
+        "operationId": "OrgAdminController_listAudit",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Org id.",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but insufficient role in this org.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Org not found / not the caller's org (anti-enumeration — never 403 for this case).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Query this org's audit log rows only.",
+        "tags": [
+          "org-admin"
+        ]
+      }
+    },
+    "/api/v1/orgs/{id}/admin/usage": {
+      "get": {
+        "operationId": "OrgAdminController_usage",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Org id.",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but insufficient role in this org.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Org not found / not the caller's org (anti-enumeration — never 403 for this case).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Read-only usage rollup (project/environment/config-key counts) for this org.",
+        "tags": [
+          "org-admin"
+        ]
+      }
+    },
+    "/api/v1/legal/documents": {
+      "get": {
+        "operationId": "LegalController_documents",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Legal"
+        ]
+      }
+    },
+    "/api/v1/legal/consent-status": {
+      "get": {
+        "operationId": "LegalController_consentStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Legal"
+        ]
+      }
+    },
+    "/api/v1/legal/accept": {
+      "post": {
+        "operationId": "LegalController_accept",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Legal"
+        ]
+      }
+    },
+    "/api/v1/account/export": {
+      "get": {
+        "operationId": "AccountController_export",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Account"
+        ]
+      }
+    },
+    "/api/v1/account/delete": {
+      "post": {
+        "operationId": "AccountController_delete",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Account"
+        ]
+      }
+    },
+    "/api/v1/orgs/{orgId}/invites": {
+      "post": {
+        "operationId": "OrgInvitesController_create",
+        "parameters": [
+          {
+            "name": "orgId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "OrgInvites"
+        ]
+      },
+      "get": {
+        "operationId": "OrgInvitesController_list",
+        "parameters": [
+          {
+            "name": "orgId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "OrgInvites"
+        ]
+      }
+    },
+    "/api/v1/invites/{id}": {
+      "delete": {
+        "operationId": "InviteController_revoke",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Invite"
+        ]
+      }
+    },
+    "/api/v1/invites/{token}": {
+      "get": {
+        "operationId": "InvitePublicController_preview",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "InvitePublic"
+        ]
+      }
+    },
+    "/api/v1/invites/{token}/accept": {
+      "post": {
+        "operationId": "InvitePublicController_accept",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "InvitePublic"
+        ]
+      }
+    },
+    "/api/v1/orgs/{orgId}/roles": {
+      "get": {
+        "operationId": "OrgRolesController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The 4 built-in roles + the seeded catalog, each with its permission list (read-only).",
+        "tags": [
+          "roles"
+        ]
+      }
+    },
+    "/api/v1/orgs/{orgId}/me/permissions": {
+      "get": {
+        "operationId": "MyPermissionsController_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "projectId/environmentId not found or not in caller's org (anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own effective permissions (builtin role + grants) at an optional project/environment scope.",
+        "tags": [
+          "role-grants"
+        ]
+      }
+    },
+    "/api/v1/orgs/{orgId}/members/{membershipId}/role-grants": {
+      "get": {
+        "operationId": "MembershipRoleGrantsController_list",
+        "parameters": [
+          {
+            "name": "membershipId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Member/role/project/environment not found or not in caller's org (anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List every role grant held by this member.",
+        "tags": [
+          "role-grants"
+        ]
+      },
+      "post": {
+        "operationId": "MembershipRoleGrantsController_create",
+        "parameters": [
+          {
+            "name": "membershipId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Member/role/project/environment not found or not in caller's org (anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This member already has that role at that scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Grant a catalog role to this member, optionally scoped to a project or environment.",
+        "tags": [
+          "role-grants"
+        ]
+      }
+    },
+    "/api/v1/role-grants/{grantId}": {
+      "delete": {
+        "operationId": "RoleGrantController_revoke",
+        "parameters": [
+          {
+            "name": "grantId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "401": {
+            "description": "Missing/invalid JWT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Grant not found / not in caller's org (anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Revoke a role grant — effective on the grantee's next request.",
+        "tags": [
+          "role-grants"
         ]
       }
     }

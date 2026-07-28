@@ -1,0 +1,130 @@
+{
+  "description": "Native-environment merge semantics — the shared core behind Node's `mergeIntoProcessEnv`, Go's `MergeIntoEnv`, Python's `populate_environ` and the Java Spring Boot starter's EnvPit PropertySource (bd:envpit-yvyr + bd:envpit-durd). Given a `snapshot` (`values` + `secretKeys`, exactly as unwrapped by resolve-body.json), an `existing` map standing in for the process environment, and `options`, the merge produces three SORTED, values-free key-name lists: `merged`, `skippedExisting`, `skippedSecrets`. Ground truth: sdks/node/src/process-env-merge.ts (`mergeSnapshotIntoEnv`).",
+  "notes": {
+    "checkOrder": "Per key, in this exact order: (1) a `null` value is absent — never written, never counted in ANY list; (2) a key in `secretKeys` is skipped unless `includeSecrets` is true; (3) a key already present in `existing` is skipped unless `override` is true; (4) otherwise it is written. Order matters and is asserted: the secret check runs BEFORE the existing-key check, so a secret is reported as `skippedSecrets` — not `skippedExisting` — even when the target already holds that name, and `override: true` never smuggles a secret past the secret check.",
+    "defaults": "`includeSecrets` defaults to FALSE and `override` defaults to FALSE. The zero-option call is therefore the safe one: it merges only non-secret keys and never clobbers anything the host process already set. This inverts the pre-durd Node API, where the merge could not distinguish secrets at all and demanded a mandatory `acknowledgeSecretsMayBeIncluded: true` acknowledgment from every caller.",
+    "includeSecretsIsTheAcknowledgment": "`includeSecrets: true` writes decrypted secret values into the process environment, which is inherited by every child process, serialized whole by many APM/crash reporters, and readable at /proc/<pid>/environ on Linux. Naming it at the call site IS the acknowledgment — there is no second flag.",
+    "listsNeverCarryValues": "All three lists are key NAMES only, so the whole result is safe to log verbatim — same construction rule as ChangeEvent.changedKeys in snapshot-diff.json.",
+    "languageLocalOptions": "Go's `WithOnly`/`WithExclude` and Python's `only=`/`exclude=` have no Node/Java equivalent and are therefore NOT covered here; each language tests those in its own suite. Every case below uses only options all four languages expose."
+  },
+  "cases": [
+    {
+      "name": "secrets-are-excluded-by-default",
+      "snapshot": { "values": { "API_URL": "https://api.example.com", "DB_PASSWORD": "hunter2" }, "secretKeys": ["DB_PASSWORD"] },
+      "existing": {},
+      "options": {},
+      "expected": { "merged": ["API_URL"], "skippedExisting": [], "skippedSecrets": ["DB_PASSWORD"] }
+    },
+    {
+      "name": "include-secrets-opts-them-in",
+      "snapshot": { "values": { "API_URL": "https://api.example.com", "DB_PASSWORD": "hunter2" }, "secretKeys": ["DB_PASSWORD"] },
+      "existing": {},
+      "options": { "includeSecrets": true },
+      "expected": { "merged": ["API_URL", "DB_PASSWORD"], "skippedExisting": [], "skippedSecrets": [] }
+    },
+    {
+      "name": "no-secrets-at-all-merges-everything",
+      "snapshot": { "values": { "API_URL": "https://api.example.com", "LOG_LEVEL": "debug" }, "secretKeys": [] },
+      "existing": {},
+      "options": {},
+      "expected": { "merged": ["API_URL", "LOG_LEVEL"], "skippedExisting": [], "skippedSecrets": [] }
+    },
+    {
+      "name": "every-key-secret-merges-nothing-by-default",
+      "snapshot": { "values": { "A": "1", "B": "2" }, "secretKeys": ["A", "B"] },
+      "existing": {},
+      "options": {},
+      "expected": { "merged": [], "skippedExisting": [], "skippedSecrets": ["A", "B"] }
+    },
+    {
+      "name": "existing-value-wins-by-default",
+      "snapshot": { "values": { "API_URL": "https://envpit.example" }, "secretKeys": [] },
+      "existing": { "API_URL": "https://set-by-the-deploy-platform" },
+      "options": {},
+      "expected": { "merged": [], "skippedExisting": ["API_URL"], "skippedSecrets": [] }
+    },
+    {
+      "name": "override-replaces-an-existing-value",
+      "snapshot": { "values": { "API_URL": "https://envpit.example" }, "secretKeys": [] },
+      "existing": { "API_URL": "https://set-by-the-deploy-platform" },
+      "options": { "override": true },
+      "expected": { "merged": ["API_URL"], "skippedExisting": [], "skippedSecrets": [] }
+    },
+    {
+      "name": "an-existing-empty-string-still-counts-as-present",
+      "snapshot": { "values": { "API_URL": "https://envpit.example" }, "secretKeys": [] },
+      "existing": { "API_URL": "" },
+      "options": {},
+      "expected": { "merged": [], "skippedExisting": ["API_URL"], "skippedSecrets": [] },
+      "why": "Presence, not truthiness. An empty env var was deliberately set by someone and EnvPit does not second-guess it."
+    },
+    {
+      "name": "secret-check-precedes-existing-check",
+      "snapshot": { "values": { "DB_PASSWORD": "hunter2" }, "secretKeys": ["DB_PASSWORD"] },
+      "existing": { "DB_PASSWORD": "already-here" },
+      "options": {},
+      "expected": { "merged": [], "skippedExisting": [], "skippedSecrets": ["DB_PASSWORD"] },
+      "why": "The key is reported under the reason that actually governs it. Reporting it as skippedExisting would tell the caller 'set this yourself and EnvPit will stop skipping it' — the opposite of what happens."
+    },
+    {
+      "name": "override-does-not-smuggle-a-secret-through",
+      "snapshot": { "values": { "DB_PASSWORD": "hunter2" }, "secretKeys": ["DB_PASSWORD"] },
+      "existing": { "DB_PASSWORD": "already-here" },
+      "options": { "override": true },
+      "expected": { "merged": [], "skippedExisting": [], "skippedSecrets": ["DB_PASSWORD"] }
+    },
+    {
+      "name": "override-plus-include-secrets-replaces-a-secret",
+      "snapshot": { "values": { "DB_PASSWORD": "hunter2" }, "secretKeys": ["DB_PASSWORD"] },
+      "existing": { "DB_PASSWORD": "already-here" },
+      "options": { "override": true, "includeSecrets": true },
+      "expected": { "merged": ["DB_PASSWORD"], "skippedExisting": [], "skippedSecrets": [] }
+    },
+    {
+      "name": "null-value-is-never-written-and-never-counted",
+      "snapshot": { "values": { "UNSET": null, "SET": "1" }, "secretKeys": [] },
+      "existing": {},
+      "options": {},
+      "expected": { "merged": ["SET"], "skippedExisting": [], "skippedSecrets": [] },
+      "why": "A null is EnvPit's key-exists-but-has-no-value-here representation, identical to the getters' null-equals-absent rule. It must never become the literal string \"null\" in the environment."
+    },
+    {
+      "name": "null-secret-value-is-absent-not-a-skipped-secret",
+      "snapshot": { "values": { "UNSET_SECRET": null }, "secretKeys": ["UNSET_SECRET"] },
+      "existing": {},
+      "options": {},
+      "expected": { "merged": [], "skippedExisting": [], "skippedSecrets": [] },
+      "why": "The null check comes first, so there was no value to withhold. Counting it would inflate skippedSecrets with keys that carry nothing."
+    },
+    {
+      "name": "null-value-does-not-clear-an-existing-env-var",
+      "snapshot": { "values": { "API_URL": null }, "secretKeys": [] },
+      "existing": { "API_URL": "https://set-by-the-deploy-platform" },
+      "options": { "override": true },
+      "expected": { "merged": [], "skippedExisting": [], "skippedSecrets": [] },
+      "why": "`override` chooses whose value wins, not whether EnvPit may unset. A null is not a deletion instruction."
+    },
+    {
+      "name": "all-three-lists-are-sorted-not-in-response-order",
+      "snapshot": { "values": { "ZULU": "1", "ALPHA": "1", "MIKE": "1", "ZEBRA_SECRET": "s", "ALPHA_SECRET": "s", "ZOO_TAKEN": "1", "ABLE_TAKEN": "1" }, "secretKeys": ["ZEBRA_SECRET", "ALPHA_SECRET"] },
+      "existing": { "ZOO_TAKEN": "x", "ABLE_TAKEN": "x" },
+      "options": {},
+      "expected": { "merged": ["ALPHA", "MIKE", "ZULU"], "skippedExisting": ["ABLE_TAKEN", "ZOO_TAKEN"], "skippedSecrets": ["ALPHA_SECRET", "ZEBRA_SECRET"] }
+    },
+    {
+      "name": "empty-snapshot-is-a-no-op",
+      "snapshot": { "values": {}, "secretKeys": [] },
+      "existing": { "API_URL": "https://set-by-the-deploy-platform" },
+      "options": { "override": true, "includeSecrets": true },
+      "expected": { "merged": [], "skippedExisting": [], "skippedSecrets": [] }
+    },
+    {
+      "name": "a-secret-key-name-absent-from-values-excludes-nothing",
+      "snapshot": { "values": { "API_URL": "https://api.example.com" }, "secretKeys": ["GONE"] },
+      "existing": {},
+      "options": {},
+      "expected": { "merged": ["API_URL"], "skippedExisting": [], "skippedSecrets": [] },
+      "why": "Pairs with resolve-body.json's `secret-key-absent-from-values-is-tolerated` — the merge iterates `values`, so an unmatched name is inert rather than an error."
+    }
+  ]
+}
