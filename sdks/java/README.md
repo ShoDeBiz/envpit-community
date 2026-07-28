@@ -25,7 +25,104 @@ String dbUrl = envpit.get("DATABASE_URL");             // in-memory read — nev
 Run it — you should see your value. That's it: every `get` after `load()` is an in-memory read;
 the snapshot auto-refreshes on a background daemon thread.
 
-### Using Spring? Register it as a bean
+### Using Spring Boot? `@Value` and `@ConfigurationProperties` just work
+
+bd:envpit-yvyr — add the starter, set an API key, and existing `@Value("${DATABASE_URL}")` /
+`@ConfigurationProperties` code works with **no special client object**:
+
+```xml
+<dependency>
+  <groupId>com.envpit</groupId>
+  <artifactId>envpit-spring-boot-starter</artifactId>
+  <version>0.1.0</version>
+</dependency>
+```
+
+```yaml
+# application.yml
+envpit:
+  api-key: ${ENVPIT_API_KEY}   # optional here — falls back to the ENVPIT_API_KEY OS env var
+                                 # (Spring's own relaxed binding on the "systemEnvironment"
+                                 # source, not this SDK's fallback)
+```
+
+```java
+@Component
+class MyService {
+    @Value("${DATABASE_URL}")
+    String databaseUrl;   // resolved from EnvPit — no EnvpitClient in sight
+}
+```
+
+`@ConfigurationProperties`-bound classes need no extra code at all: they bind against whatever is
+in the Spring `Environment`, and EnvPit's values are just another `PropertySource` in it by the
+time any bean is constructed.
+
+**Module structure — a separate artifact on purpose.** `envpit-spring-boot-starter` is its own
+Maven module/jar (`sdks/java/envpit-spring-boot-starter/`), depending on `envpit-sdk` (compile)
+and `spring-boot`/`spring-context` (`provided` — your own Spring BOM supplies the real version at
+runtime). `envpit-sdk` itself stays **zero-runtime-dependency**; an app that never adds the
+starter gets zero Spring classes anywhere near the core SDK. This is the standard
+`spring-boot-starter-*` convention (a separate artifact per integration), not a multi-module
+Maven reactor — the two `pom.xml`s are independent, sibling, standalone POMs.
+
+**Properties**
+
+| Property | Default | Meaning |
+|---|---|---|
+| `envpit.api-key` | *(none — falls back to `ENVPIT_API_KEY` OS env var)* | Required to opt in. Absent everywhere → the starter is a **silent no-op**, not a boot failure (it may be on the classpath transitively without every app using EnvPit). Present but the fetch fails → **fails the boot, fast** (same documented convention as the manual-bean path below). |
+| `envpit.enabled` | `true` | Explicit escape hatch — `false` disables even when an api-key resolves. |
+| `envpit.host` | `https://envpit.com` | Override for self-hosted/local dev. |
+| `envpit.timeout` | `5s` | The one synchronous boot-time fetch's own request timeout (`60s`/`PT5S`-style — `DurationStyle`). |
+| `envpit.exclude-keys` | *(none)* | Comma-separated key names kept out of the `Environment` (e.g. `envpit.exclude-keys=DB_PASSWORD,JWT_SECRET`). |
+
+**Not supported: `envpit.project` / `envpit.environment`.** These appear in the SDK design spec's
+sample YAML (§12), but `EnvpitClient.Builder` has no `.project(...)`/`.environment(...)` — project
+and environment are inferred server-side from the API key itself (INV-SDK-12). Adding these
+properties would silently do nothing, so they were deliberately left out rather than shipped as
+dead configuration — flagged back to the design docs as a spec-vs-implementation gap.
+
+**Precedence (a deploy-time override always wins over EnvPit):**
+
+```
+command-line args  >  System properties  >  OS environment variables  >  ENVPIT  >
+application-{profile}.yml/properties  >  application.yml/properties  >  @PropertySource  >
+SpringApplication#setDefaultProperties
+```
+
+EnvPit is added via `environment.getPropertySources().addAfter("systemEnvironment", ...)` — Spring
+Boot's own default source ordering (verified against the actual `spring-boot-3.1.3.jar`) means
+this places EnvPit *below* command-line args/System properties/OS env vars and *above* your
+packaged `application.yml`/`.properties` — the product story only makes sense if EnvPit outranks
+the static files it's meant to replace, while deploy-time overrides (Kubernetes env vars, CI
+variables, `-D`/`--` flags) still always win.
+
+**Boot-time snapshot only — not a live subscription.** `@Value` resolves this `PropertySource`'s
+content exactly once, at boot, before the `ApplicationContext` even exists. EnvPit's realtime
+refresh (SSE) **cannot** reach a value already copied into the `Environment` this way — plain
+`@Value` has no equivalent of Spring Cloud's `@RefreshScope`, and this starter deliberately does
+**not** add a `spring-cloud-context` dependency to bridge that gap. If you need guaranteed-live
+values for specific keys, keep using the manual-bean approach below and read through
+`get()`/`onChange()` for those keys.
+
+**Secrets are not auto-excluded — today.** `GET /api/v1/config` (the endpoint every SDK language
+calls) returns a flat `key -> value` map with no `is_secret` flag on the wire — verified against
+`apps/api/src/config-management/config-resolve.controller.ts`'s response schema in the main
+`envpit` repo. There is currently no signal to filter secrets out of `@Value`/`@ConfigurationProperties`
+automatically; use `envpit.exclude-keys` for any key you know is sensitive. `EnvpitClient.knownSecretKeys()`
+is a prepared extension point for once the server ships this metadata — until then it's always
+empty, by design, not approximated with a key-name heuristic (a heuristic is wrong in both
+directions: `DATABASE_URL` commonly embeds a password and wouldn't match one).
+
+**Actuator health/info contribution:** not implemented in this round, on purpose — flagged rather
+than built just because the design spec (§12) lists it. Reassess as a follow-up once there's an
+actual consumer need (a health check needs a live `EnvpitClient` to report against, which cuts
+against the boot-time-snapshot-then-close design above).
+
+### Prefer a live, injectable client instead? Register it as a bean
+
+Still the right choice if you need `onChange()`, `cacheInfo()`, or any value guaranteed fresh past
+boot time — the starter above never keeps a client alive past the one snapshot fetch.
 
 ```java
 @Configuration
@@ -39,7 +136,9 @@ class EnvpitConfig {
 ```
 
 Inject `EnvpitClient` anywhere. There is no static singleton — the client is a normal bean with a
-normal lifecycle (`close()` runs on context shutdown via `destroyMethod`).
+normal lifecycle (`close()` runs on context shutdown via `destroyMethod`). This works with or
+without `envpit-spring-boot-starter` on the classpath — the two approaches don't conflict (the
+starter never registers an `EnvpitClient` bean itself).
 
 ## API
 

@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  envpit-spring-boot-starter — bd:envpit-yvyr (owner directive 2026-07-27: `@Value("${DATABASE_URL}")`
+  and `@ConfigurationProperties` should work with no special client object, matching Spring's own
+  idiom). A DELIBERATELY SEPARATE Maven module/artifact from `envpit-sdk` (this file's sibling
+  `../pom.xml`) — the core SDK's own doc comment states it is "Java 17, ZERO runtime dependencies"
+  (`../pom.xml:4`) and that invariant must not be broken by a Spring dependency. Spring Boot's own
+  `spring-boot-starter-*` convention IS a separate artifact per integration (never an optional/extras
+  mechanism bolted onto a base jar, unlike e.g. Python's `pip install envpit[flask]` — the Java/Maven
+  ecosystem has no equivalent "extras" concept) — this module follows that exact convention: an app
+  that never adds `envpit-spring-boot-starter` to its classpath gets zero Spring classes anywhere
+  near `envpit-sdk`.
+
+  Depends on `envpit-sdk` at `compile` scope (needs `EnvpitClient` at compile time to build) and on
+  `spring-boot`/`spring-context` at `provided` scope — the consuming Spring Boot application's own
+  Spring BOM supplies the actual runtime version; this starter never forces its own Spring version
+  onto a consumer (the standard `spring-boot-starter-*` posture — see e.g. Spring's own starters,
+  which likewise never redeclare Spring versions outside their own dependencyManagement).
+
+  Version pin (3.1.3 / Spring Framework 6.0.11): chosen because BOTH are already present in this
+  machine's local Maven repository (`~/.m2/repository/org/springframework/boot/spring-boot-dependencies/3.1.3/`)
+  and `spring-boot-dependencies:3.1.3`'s own POM pins `<spring-framework.version>6.0.11</spring-framework.version>`
+  (verified: `grep spring-framework.version` on that POM) — a network-independent, evidence-based
+  choice given this sandbox's Maven mirror is unreachable (see hand-off notes on bd:envpit-yvyr).
+  NOT a claim that 3.1.3 is the current latest GA — confirm/bump with the owner once the mirror is
+  fixed and `mvn versions:display-dependency-updates` can actually run.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.envpit</groupId>
+  <artifactId>envpit-spring-boot-starter</artifactId>
+  <version>0.1.0</version>
+  <packaging>jar</packaging>
+
+  <name>envpit-spring-boot-starter</name>
+  <description>
+    Spring Boot integration for the EnvPit Java SDK — EnvPit-resolved config values become
+    ordinary Spring `Environment` properties (`@Value`, `@ConfigurationProperties`) via a
+    `PropertySource`. A separate artifact from `envpit-sdk` on purpose — see this file's own
+    top-of-file comment.
+  </description>
+  <url>https://github.com/ShoDeBiz/envpit-community</url>
+
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <envpit-sdk.version>0.1.0</envpit-sdk.version>
+    <spring-boot.version>3.1.3</spring-boot.version>
+    <junit.version>5.10.2</junit.version>
+  </properties>
+
+  <dependencies>
+    <!-- The core SDK — compile scope, this module's whole reason to exist. -->
+    <dependency>
+      <groupId>com.envpit</groupId>
+      <artifactId>envpit-sdk</artifactId>
+      <version>${envpit-sdk.version}</version>
+    </dependency>
+
+    <!-- `provided`: the CONSUMING Spring Boot application supplies the actual Spring Boot/Framework
+         version at runtime (via its own parent BOM) — this starter must never drag its own Spring
+         version into a consumer's dependency tree, the same posture every `spring-boot-starter-*`
+         takes toward Spring itself. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot</artifactId>
+      <version>${spring-boot.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- Test-only: exercises the REAL `SpringApplication` bootstrap path (`spring.factories`
+         discovery, `@Value` resolution against a live `AnnotationConfigApplicationContext`), not
+         just the post-processor class in isolation. -->
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-context</artifactId>
+      <version>6.0.11</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+        <configuration>
+          <release>17</release>
+          <compilerArgs>
+            <arg>-Xlint:all,-serial</arg>
+          </compilerArgs>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.2.5</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>

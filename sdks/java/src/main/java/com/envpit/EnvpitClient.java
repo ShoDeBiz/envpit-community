@@ -3,9 +3,12 @@ package com.envpit;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -330,6 +333,71 @@ public final class EnvpitClient implements AutoCloseable {
         CacheState st = this.state;
         Duration age = Duration.between(st.fetchedAt(), Instant.now());
         return new CacheInfo(st.fetchedAt(), age, st.lastError(), st.etag(), st.refreshMode(), st.realtimeSince(), st.lastChangeAt());
+    }
+
+    // ---- native-mechanism merge (bd:envpit-yvyr) -----------------------------------------------
+
+    /**
+     * A defensive (shallow) copy of the current in-memory config snapshot — every key -&gt; value
+     * pair this client currently holds, including keys present with a {@code null} value
+     * (unset). Synchronous, in-memory read — never a network call, same guarantee as every
+     * {@code get*()} getter.
+     *
+     * <p>Added for bd:envpit-yvyr — the ONE thing {@code envpit-spring-boot-starter} (a separate
+     * Maven module/package, {@code com.envpit.spring}) needs from this core module to build a
+     * Spring {@code PropertySource} at all: {@link ConfigSnapshot} (this package's internal
+     * wrapper) is deliberately package-private and non-exposing (its own doc comment: "never
+     * exposes its backing map" — AC-SEC-SDK3-1, the {@code toString()} leak boundary), so nothing
+     * outside {@code com.envpit} could previously enumerate the full key set at all. This method
+     * is the deliberate, public, opt-in export point — it does not weaken AC-SEC-SDK3-1, which is
+     * about ACCIDENTAL leaks via {@code toString()}/logging, not an explicit caller asking for
+     * every value by name. Mirrors Python's {@code EnvpitClient.snapshot()} (same bd, same
+     * rationale). Mutating the returned {@link Map} never affects this client's own state.
+     *
+     * @throws IllegalStateException structurally unreachable via the public API — {@link
+     *     Builder#load()} never returns a client without a successful first fetch (INV-SDK-1);
+     *     kept as a defensive guard, matching {@link #readRaw(String)}'s identical guard.
+     */
+    public Map<String, String> snapshot() {
+        CacheState st = this.state;
+        if (st == null) {
+            throw new IllegalStateException(
+                    "envpit: config not loaded yet — this should be unreachable via EnvpitClient.builder()...load()");
+        }
+        ConfigSnapshot snap = st.snapshot();
+        Map<String, String> copy = new LinkedHashMap<>();
+        for (String key : snap.keySet()) {
+            copy.put(key, snap.get(key));
+        }
+        return copy;
+    }
+
+    /**
+     * Prepared "socket" for server-provided secret metadata (Oliver, bd:envpit-yvyr, 2026-07-28
+     * correction). ALWAYS empty today: {@code GET /api/v1/config} ({@link Transport}) returns a
+     * flat {@code key -> value} map with no {@code is_secret} field at all — independently
+     * verified against {@code apps/api/src/config-management/config-resolve.controller.ts}'s
+     * documented response schema ({@code schema: { additionalProperties: { type: 'string',
+     * nullable: true } } }) and {@code ConfigService.resolveEnvironmentSecretsInternal}'s {@code
+     * Record<string, string | null>} return type in the main {@code envpit} repo (that method
+     * DOES compute {@code row.isSecret} server-side to decide whether to decrypt, then discards
+     * the flag before returning — the flag exists in the database, not on the wire). Same
+     * evidence chain Python's {@code client.py:_known_secret_keys()} and Node's {@code
+     * process-env-merge.ts}'s "FUTURE FILTER EXTENSION POINT" comment independently cite.
+     *
+     * <p>NOT a placeholder for a not-yet-written key-name heuristic (matching {@code
+     * SECRET}/{@code PASSWORD}/{@code TOKEN} in the key name) — a heuristic would be wrong in
+     * both directions: {@code DATABASE_URL} commonly embeds a password and would slip straight
+     * past any such pattern, while a legitimately non-secret key merely spelled {@code *_TOKEN}
+     * would false-positive.
+     *
+     * <p>The day the wire protocol adds per-key secret metadata, only THIS method's body needs to
+     * change — every caller in {@code envpit-spring-boot-starter} (and any future framework
+     * integration) already folds its result into its excluded-keys set unconditionally, so the
+     * fix lands in exactly one place.
+     */
+    public Set<String> knownSecretKeys() {
+        return Set.of();
     }
 
     // ---- subscribe (callback-based; single daemon dispatch thread — see class doc comment) -----

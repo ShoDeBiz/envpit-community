@@ -1,0 +1,9 @@
+# bd:envpit-yvyr — verified against the actual mechanism Spring Boot 3.1.3's OWN built-in
+# EnvironmentPostProcessors (ConfigDataEnvironmentPostProcessor, SystemEnvironmentPropertySource-
+# EnvironmentPostProcessor, etc.) use, by inspecting spring-boot-3.1.3.jar's own
+# META-INF/spring.factories directly (`unzip -p spring-boot-3.1.3.jar META-INF/spring.factories`)
+# — EnvironmentPostProcessor discovery is STILL spring.factories-based in Boot 3.x (only
+# @AutoConfiguration classes moved to META-INF/spring/...AutoConfiguration.imports; this SPI
+# did not).
+org.springframework.boot.env.EnvironmentPostProcessor=\
+com.envpit.spring.EnvpitEnvironmentPostProcessor
