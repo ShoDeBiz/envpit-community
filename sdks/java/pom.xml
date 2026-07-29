@@ -167,7 +167,12 @@
           <plugin>
             <groupId>org.sonatype.central</groupId>
             <artifactId>central-publishing-maven-plugin</artifactId>
-            <version>0.5.0</version>
+            <!-- 0.5.0 uploaded fine but then died deserializing the status response: the Central
+                 API now returns a `warnings` field its model does not know and does not ignore,
+                 so the build reported FAILURE for a deployment that had already succeeded. Read
+                 the log above the stack trace before retrying that class of error — a blind
+                 retry just creates a second deployment in the portal. -->
+            <version>0.11.0</version>
             <extensions>true</extensions>
             <configuration>
               <publishingServerId>central</publishingServerId>
