@@ -1,0 +1,55 @@
+# Runs the Java SDK's test suite on every change to it (bd:envpit-ktd5).
+#
+# WHY THIS EXISTS: sdks/java ships 19 *Test.java files that no automation has ever run, and
+# unlike Node and Python there is no publish workflow to piggyback the tests on — Java releases
+# to Maven Central are deliberately NOT automated (owner decision, 2026-07-29), so nothing in
+# CI ever compiled this code, let alone tested it.
+#
+# This is the unmet "CI runs tests" acceptance criterion on bd:envpit-rnc (M14).
+#
+# TWO Maven projects, not one. sdks/java/pom.xml has no <modules> section, so a build there does
+# NOT reach sdks/java/envpit-spring-boot-starter, which carries its own pom and its own 14 tests.
+# Running only the parent would look green while leaving the starter — the part every Spring Boot
+# integration actually depends on — completely untested. Hence two explicit steps below.
+name: test-java
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sdks/java/**'
+      - '.github/workflows/test-java.yml'
+  pull_request:
+    paths:
+      - 'sdks/java/**'
+      - '.github/workflows/test-java.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          # Matches <maven.compiler.release>17</maven.compiler.release> in sdks/java/pom.xml.
+          java-version: '17'
+          distribution: temurin
+          cache: maven
+
+      - name: Test the SDK
+        run: mvn -B --no-transfer-progress test
+        working-directory: sdks/java
+
+      - name: Test the Spring Boot starter
+        # Separate project — see the header note. `install` the SDK first so the starter can
+        # resolve it from the local repository rather than from Maven Central, which would
+        # otherwise test the starter against the last RELEASED sdk instead of this commit's.
+        run: |
+          mvn -B --no-transfer-progress -DskipTests install -f sdks/java/pom.xml
+          mvn -B --no-transfer-progress test -f sdks/java/envpit-spring-boot-starter/pom.xml

@@ -1,0 +1,60 @@
+# Runs the Go SDK's test suite on every change to it (bd:envpit-ktd5).
+#
+# WHY THIS EXISTS: sdks/go/envpit ships 14 _test.go files that no automation has ever run.
+# publish-node.yml and publish-python.yml each run their language's tests before publishing, but
+# Go has no publish step at all — `go get` resolves straight from a git tag, so the tag IS the
+# release. That meant the one gate other languages get for free did not exist here: a tag could
+# be pushed over a red suite and `go get` would serve it immediately, with no build to fail.
+#
+# This is the unmet "CI runs tests" acceptance criterion on bd:envpit-fe7 (M15).
+#
+# Deliberately NOT gated on a tag: for a language whose release is a tag, a test run that happens
+# at tag time is already too late. It runs on the change instead.
+name: test-go
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sdks/go/**'
+      - '.github/workflows/test-go.yml'
+  pull_request:
+    paths:
+      - 'sdks/go/**'
+      - '.github/workflows/test-go.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/go/envpit
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          # Matches the `go 1.22` directive in sdks/go/envpit/go.mod. Keep the two in step —
+          # a newer toolchain here would silently accept syntax the declared minimum rejects.
+          go-version: '1.22'
+          cache-dependency-path: sdks/go/envpit/go.sum
+
+      - name: Verify the module is tidy
+        # A go.mod/go.sum that drifted from the imports breaks `go get` for consumers while
+        # still building fine locally, because the local module cache papers over it.
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+      - run: go vet ./...
+
+      - name: Test with the race detector
+        # -race matters more than usual here: the SDK refreshes config on a background
+        # goroutine while callers read it, and sdks/go/envpit has a goroutine_leak_test.go
+        # precisely because that has gone wrong before.
+        run: go test -race -count=1 ./...
