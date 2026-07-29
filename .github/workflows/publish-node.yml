@@ -1,0 +1,69 @@
+# Publishes @envpit/sdk to npm via Trusted Publishing (OIDC) — no token, no OTP.
+#
+# WHY THIS EXISTS: the first release was published by hand with a granular access token plus a
+# TOTP code typed at the prompt. npm is restricting tokens that bypass 2FA — account changes from
+# Aug 2026, direct publishing from Jan 2027 — so that path has an expiry date. Trusted Publishing
+# has GitHub mint a short-lived credential per run: nothing to store, nothing to rotate, nothing
+# to leak, and no human at an authenticator app.
+#
+# BEFORE THE FIRST RUN, configure the trusted publisher on npmjs.com for @envpit/sdk:
+#   repository ShoDeBiz/envpit-community, workflow publish-node.yml, environment (blank).
+# Without it the publish step fails authentication — the workflow cannot grant itself trust.
+#
+# Triggered by a tag so a release is a deliberate act, never a side effect of a merge.
+name: publish-node
+
+on:
+  push:
+    tags:
+      - 'sdks/node/v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # REQUIRED — this is what lets npm verify the run via OIDC.
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/node
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+          cache-dependency-path: sdks/node/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      # Gates before anything reaches the registry. A published version is permanent: npm allows
+      # unpublish only within 72 hours, and the name+version pair is burned forever either way.
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+      # Catches the class of mistake that nearly shipped in the first release — a package whose
+      # tarball is missing its LICENSE, or whose metadata points at a host with no DNS record.
+      - name: Inspect the tarball before publishing
+        run: |
+          npm pack --dry-run
+          test -f LICENSE || { echo "::error::LICENSE missing from sdks/node"; exit 1; }
+
+      # npm >= 11.5.1 is required for OIDC. setup-node pins npm to whatever ships with the Node
+      # major, which may be older, so upgrade explicitly rather than hoping.
+      - run: npm install -g npm@latest
+
+      - name: Publish
+        run: npm publish
+        # No NODE_AUTH_TOKEN. If this step asks for one, the trusted publisher is not configured
+        # on npmjs.com yet — fix it there, do not add a token here.

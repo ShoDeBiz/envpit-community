@@ -1,0 +1,89 @@
+# Publishes the `envpit` package to PyPI via Trusted Publishing (OIDC) — no API token anywhere.
+#
+# WHY THIS EXISTS: the first release used an API token that had to be account-scoped, because
+# PyPI only offers project-scoped tokens for projects that already exist — a chicken-and-egg that
+# forces the riskiest possible credential at exactly the moment you have the least to protect.
+# Trusted Publishing removes the credential entirely: GitHub attests to the run and PyPI checks
+# that attestation, so there is nothing to store, rotate, or leak.
+#
+# BEFORE THE FIRST RUN, add the publisher at https://pypi.org/manage/project/envpit/settings/publishing/
+#   owner ShoDeBiz, repository envpit-community, workflow publish-python.yml, environment pypi.
+# (For a project that does NOT exist yet, the same form is available under "pending publisher" —
+# which is what would have avoided the account-scoped token in the first place.)
+#
+# Triggered by a tag so a release is a deliberate act, never a side effect of a merge.
+name: publish-python
+
+on:
+  push:
+    tags:
+      - 'sdks/python/v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/python
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - run: python -m pip install --upgrade pip build twine
+      - run: pip install -e '.[dev]'
+
+      # Gates before anything reaches the index. A PyPI release cannot be deleted — a version can
+      # be yanked, but the name and version stay claimed permanently.
+      - run: python -m pytest -q
+      - run: python -m mypy
+      - run: python -m ruff check .
+
+      - run: python -m build
+
+      # `twine check` validates the metadata and that the README renders on PyPI. The LICENSE
+      # assertion is here because the first release nearly shipped without one while every
+      # package declared MIT — code with no licence is all-rights-reserved by default.
+      - name: Inspect the distributions before publishing
+        run: |
+          python -m twine check dist/*
+          test -f LICENSE || { echo "::error::LICENSE missing from sdks/python"; exit 1; }
+          python - <<'PY'
+          import glob, zipfile, sys
+          whl = glob.glob('dist/*.whl')[0]
+          names = zipfile.ZipFile(whl).namelist()
+          if not any('LICENSE' in n for n in names):
+              sys.exit('::error::built wheel does not contain the LICENSE file')
+          print('wheel carries LICENSE')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: sdks/python/dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    # A GitHub environment gives the release a required-reviewer gate if you want one, and its
+    # name must match what the PyPI publisher config expects.
+    environment: pypi
+    permissions:
+      id-token: write # REQUIRED — this is what PyPI verifies. No password, no token.
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        # No `password:`. If this step asks for one, the trusted publisher is not configured on
+        # PyPI yet — fix it there, do not add a token here.
