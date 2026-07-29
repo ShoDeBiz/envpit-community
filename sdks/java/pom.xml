@@ -70,6 +70,18 @@
   </dependencies>
 
   <build>
+    <!-- Ship the licence text inside the jar, not just as pom metadata. Maven Central only
+         validates the <licenses> block above, but a consumer who has the jar and not the pom
+         (vendored, shaded, or pulled out of a lockfile cache) would otherwise have no licence
+         at all — and code with no licence is all-rights-reserved by default. -->
+    <resources>
+      <resource>
+        <directory>${project.basedir}</directory>
+        <includes><include>LICENSE</include></includes>
+        <targetPath>META-INF</targetPath>
+      </resource>
+    </resources>
+
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
