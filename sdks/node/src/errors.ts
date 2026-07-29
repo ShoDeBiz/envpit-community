@@ -12,7 +12,11 @@
  *
  * `.code`/`.docsAnchor` (bd:envpit-ed3h Part 3): every error carries a stable, machine-readable
  * `code` — safe to pattern-match on instead of `.message` string-matching — plus a `docsAnchor`
- * that resolves to `https://docs.envpit.com/errors${docsAnchor}`
+ * naming this error's troubleshooting entry. Docs are at https://envpit.com/docs; there is no
+ * per-error troubleshooting page yet, so the anchor is a stable identifier waiting for one, not
+ * a URL to follow today. It previously read `docs.envpit.com`, a host with no DNS record at all
+ * — and these comments ship inside the published `.d.ts`, so every consumer was being pointed
+ * at a dead link.
  * (`outputs/SPEC-envpit-0t2z-1b-ux.md` §A3: "Stable machine code per error ... supports
  * ... lets support/AI-assistants pattern-match" and IA rule 2, "Every SDK error links here").
  * These are ADDITIVE fields — `.message` text is deliberately left byte-identical to what's
@@ -23,8 +27,9 @@ export abstract class EnvpitError extends Error {
   /** Stable machine-readable code, e.g. `ENVPIT_MISSING_KEY`. Never changes across SDK
    *  versions — safe for programmatic handling/telemetry. */
   abstract readonly code: string;
-  /** Docs anchor for this error's troubleshooting entry, e.g. `#missing-key` (always starts
-   *  with `#`) — append to `https://docs.envpit.com/errors`. */
+  /** Stable identifier for this error's troubleshooting entry, e.g. `#missing-key` (always
+   *  starts with `#`). Reserved for a per-error docs page that does not exist yet — see the
+   *  class comment above; general docs are at https://envpit.com/docs. */
   abstract readonly docsAnchor: string;
 
   protected constructor(message: string) {

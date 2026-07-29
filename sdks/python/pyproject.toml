@@ -28,7 +28,7 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://docs.envpit.com"
+Homepage = "https://envpit.com"
 Repository = "https://github.com/ShoDeBiz/envpit-community"
 Issues = "https://github.com/ShoDeBiz/envpit-community/discussions"
 

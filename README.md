@@ -41,7 +41,7 @@ in Discussions, Issues, or screenshots. Redact before posting.
 ## 🔗 Links
 
 - Website: https://envpit.com
-- Docs: https://docs.envpit.com
+- Docs: https://envpit.com/docs
 - Status: https://status.envpit.com
 - Contact: support@envpit.com
 

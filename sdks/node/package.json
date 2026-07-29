@@ -30,7 +30,7 @@
     "url": "git+https://github.com/ShoDeBiz/envpit-community.git",
     "directory": "sdks/node"
   },
-  "homepage": "https://docs.envpit.com",
+  "homepage": "https://envpit.com",
   "bugs": "https://github.com/ShoDeBiz/envpit-community/discussions",
   "keywords": [
     "envpit",
