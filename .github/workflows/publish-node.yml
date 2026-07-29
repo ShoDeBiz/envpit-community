@@ -35,7 +35,11 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          # Must be 10.x. sdks/node/pnpm-workspace.yaml uses `allowBuilds:`, a pnpm 10 feature,
+          # and carries no `packages:` field — pnpm 9 rejects that file outright with
+          # "packages field missing or empty" and the run dies before it ever reaches auth.
+          # The local toolchain is 10.32.1; keep these in step.
+          version: 10
 
       - uses: actions/setup-node@v4
         with:
