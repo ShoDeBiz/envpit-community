@@ -61,4 +61,13 @@ secret-flagged and simultaneously see an empty withheld list. That is correct, a
 filter failing — but it reads like failure, which is why every example says so out loud.
 
 It also means: if the only secret in your environment has no value, these examples cannot prove
-the filter works. Give it a value first.
+the filter works — they only prove nothing leaked, which is true by default. Give it a value first.
+
+All nine were last run against an environment where the secret-flagged key **does** have a value,
+so the withheld list is genuinely non-empty and the filter is genuinely exercised:
+
+```
+merged into process.env: DB_URL, GREETING, MOELSOE
+withheld (secret)      : HOMER_KEY
+OK — no secret-flagged key is present in process.env
+```

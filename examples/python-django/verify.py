@@ -29,7 +29,8 @@ print("[envpit-django-example] skipped as secret (per MergeResult):", skipped_se
 print(
     "[envpit-django-example] secret exclusion had an observable effect in this account:",
     settings.ENVPIT_SECRET_EXCLUSION_HAD_OBSERVABLE_EFFECT,
-    "(expected False here -- HOMER_KEY currently has no value; see README)",
+    "-- True means a secret WITH a value was withheld; False means every secret-flagged key is\n"
+    "unset here, so the null check filtered it as absent before the secret check ran",
 )
 
 # The actual assertion: against the real settings object, not the summary above.

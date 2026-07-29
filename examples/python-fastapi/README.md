@@ -34,8 +34,8 @@ complete" line):
 ```
 [envpit-fastapi-example] loaded settings keys: ['db_url', 'greeting', 'moelsoe']
 [envpit-fastapi-example] secret-flagged keys (names only): ['HOMER_KEY']
-[envpit-fastapi-example] homer_key reached Settings(): False (expected False)
-[envpit-fastapi-example] secret exclusion had an observable effect in this account: False (expected False here -- HOMER_KEY currently has no value; see below)
+[envpit-fastapi-example] homer_key reached Settings(): False -- must always be False
+[envpit-fastapi-example] secret exclusion had an observable effect in this account: True -- a secret WITH a value was withheld
 ```
 
 Then, in another terminal:

@@ -84,12 +84,13 @@ print("[envpit-fastapi-example] secret-flagged keys (names only):", sorted(_clie
 print(
     "[envpit-fastapi-example] homer_key reached Settings():",
     settings.homer_key is not None,
-    "(expected False)",
+    "-- must always be False: a secret must never reach Settings()",
 )
 print(
     "[envpit-fastapi-example] secret exclusion had an observable effect in this account:",
     _secret_exclusion_had_an_effect,
-    "(expected False here -- HOMER_KEY currently has no value; see README)",
+    "-- True means a secret WITH a value was withheld; False means every secret-flagged key is\n"
+    "unset here, so the null check filtered it as absent before the secret check ran",
 )
 
 app = FastAPI()

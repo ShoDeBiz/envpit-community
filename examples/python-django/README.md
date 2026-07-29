@@ -44,7 +44,7 @@ $ python verify.py
 [envpit-django-example] merged into settings: ['DB_URL', 'GREETING', 'MOELSOE']
 [envpit-django-example] secret-flagged keys (names only): ['HOMER_KEY']
 [envpit-django-example] skipped as secret (per MergeResult): []
-[envpit-django-example] secret exclusion had an observable effect in this account: False (expected False here -- HOMER_KEY currently has no value; see below)
+[envpit-django-example] secret exclusion had an observable effect in this account: True -- a secret WITH a value was withheld
 [envpit-django-example] OK -- no secret-flagged key is an attribute of django.conf.settings
 [envpit-django-example] OK -- every reported-merged key IS a real settings attribute
 ```

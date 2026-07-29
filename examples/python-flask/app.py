@@ -47,7 +47,8 @@ print("[envpit-flask-example] skipped as secret:", list(_merge_result.skipped_se
 print(
     "[envpit-flask-example] secret exclusion had an observable effect in this account:",
     _secret_exclusion_had_an_effect,
-    "(expected False here -- HOMER_KEY currently has no value; see README)",
+    "-- True means a secret WITH a value was withheld; False means every secret-flagged key is\n"
+    "unset here, so the null check filtered it as absent before the secret check ran",
 )
 
 

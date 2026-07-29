@@ -30,7 +30,7 @@ Startup log (module-level, runs once on import):
 [envpit-flask-example] merged into app.config: ['DB_URL', 'GREETING', 'MOELSOE']
 [envpit-flask-example] secret-flagged keys (names only): ['HOMER_KEY']
 [envpit-flask-example] skipped as secret: []
-[envpit-flask-example] secret exclusion had an observable effect in this account: False (expected False here -- HOMER_KEY currently has no value; see below)
+[envpit-flask-example] secret exclusion had an observable effect in this account: True -- a secret WITH a value was withheld
 ```
 
 Then, in another terminal:

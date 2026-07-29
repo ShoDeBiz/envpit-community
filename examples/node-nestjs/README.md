@@ -98,7 +98,7 @@ Boot log:
 [envpit] merged into env     : DB_URL, GREETING, MOELSOE
 [envpit] withheld (secret)   : (none)
 [envpit] skipped (existing)  : (none)
-[envpit] secret, but unset here: HOMER_KEY (nothing to withhold for these -- set a value to exercise the filter for real)
+[envpit] withheld (secret)   : HOMER_KEY
 [envpit] OK -- no secret-flagged key is present in process.env
 
 [Nest] ... Starting Nest application...
