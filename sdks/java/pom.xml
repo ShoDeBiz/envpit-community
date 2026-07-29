@@ -21,6 +21,36 @@
   <description>EnvPit configuration management SDK for Java — zero runtime dependencies.</description>
   <url>https://github.com/ShoDeBiz/envpit-community</url>
 
+  <!--
+    The three blocks below (licenses / developers / scm) are REQUIRED by Maven Central and are
+    rejected at validation time if absent — they are not documentation. Central also requires
+    signed artifacts plus -sources and -javadoc jars; those come from the `release` profile at
+    the bottom of this file. Namespace `com.envpit` is verified via a DNS TXT record on
+    envpit.com (Sonatype Central Portal, 2026-07-29).
+  -->
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>https://opensource.org/licenses/MIT</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <id>shodebiz</id>
+      <name>ShoDe</name>
+      <url>https://github.com/ShoDeBiz</url>
+    </developer>
+  </developers>
+
+  <scm>
+    <connection>scm:git:https://github.com/ShoDeBiz/envpit-community.git</connection>
+    <developerConnection>scm:git:git@github.com:ShoDeBiz/envpit-community.git</developerConnection>
+    <url>https://github.com/ShoDeBiz/envpit-community</url>
+    <tag>HEAD</tag>
+  </scm>
+
   <properties>
     <maven.compiler.release>17</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -64,4 +94,82 @@
       </plugin>
     </plugins>
   </build>
+
+  <!--
+    Release-only, so an ordinary `mvn test` stays fast and needs no GPG key. Everything Maven
+    Central demands beyond the metadata above lives here:
+      - sources + javadoc jars (rejected without them)
+      - a detached PGP signature per artifact
+      - the Central Portal upload endpoint
+    Run with `mvn -Prelease deploy`. `central-publishing-maven-plugin` authenticates against the
+    `<server><id>central</id>` entry in ~/.m2/settings.xml (a Central Portal USER TOKEN — not the
+    portal login), which is why publishingServerId below must match that id exactly.
+  -->
+  <profiles>
+    <profile>
+      <id>release</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-source-plugin</artifactId>
+            <version>3.3.1</version>
+            <executions>
+              <execution>
+                <id>attach-sources</id>
+                <goals><goal>jar-no-fork</goal></goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-javadoc-plugin</artifactId>
+            <version>3.6.3</version>
+            <executions>
+              <execution>
+                <id>attach-javadocs</id>
+                <goals><goal>jar</goal></goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <version>3.2.4</version>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <phase>verify</phase>
+                <goals><goal>sign</goal></goals>
+                <configuration>
+                  <!-- Let gpg-agent supply the passphrase (pinentry / cached session) instead of
+                       putting it on the command line, where it would land in shell history and
+                       the process table. On CI, set MAVEN_GPG_PASSPHRASE as a secret env var. -->
+                  <gpgArguments>
+                    <arg>--pinentry-mode</arg>
+                    <arg>loopback</arg>
+                  </gpgArguments>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <version>0.5.0</version>
+            <extensions>true</extensions>
+            <configuration>
+              <publishingServerId>central</publishingServerId>
+              <!-- Upload and validate, but DO NOT release to the public index automatically.
+                   A Central release is PERMANENT — a published version can never be deleted or
+                   overwritten. Leaving this false means the deployment lands in the portal for a
+                   human to inspect and press Publish, which is the right amount of friction for
+                   an irreversible action. -->
+              <autoPublish>false</autoPublish>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

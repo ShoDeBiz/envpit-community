@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "Official Node.js/TypeScript SDK for EnvPit — configuration & secrets management without enterprise complexity.",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
