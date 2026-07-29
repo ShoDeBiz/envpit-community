@@ -1,0 +1,5 @@
+# Consumes the PUBLISHED envpit package from PyPI (no relative path, no -e ../..).
+# `~=0.1.0` mirrors the Node example's `^0.1.0` semver-caret intent: 0.1.x, never 0.2.0.
+# The `flask` extra is what envpit.integrations.flask.init_app() needs installed.
+envpit[flask]~=0.1.0
+flask~=3.0

@@ -1,0 +1,7 @@
+# Consumes the PUBLISHED envpit package from PyPI (no relative path, no -e ../..).
+# `~=0.1.0` mirrors the Node example's `^0.1.0` semver-caret intent: 0.1.x, never 0.2.0.
+# The `fastapi` extra is what pulls in `pydantic-settings` — the only runtime dependency
+# envpit.integrations.fastapi actually needs (see that module's docstring).
+envpit[fastapi]~=0.1.0
+fastapi~=0.115
+uvicorn~=0.32

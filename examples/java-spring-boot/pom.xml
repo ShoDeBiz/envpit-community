@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  envpit-example-spring-boot — consumes the PUBLISHED com.envpit:envpit-sdk from Maven Central
+  and talks to a real EnvPit production API. See README.md for the (a) vs (b) decision on why
+  this does NOT depend on com.envpit:envpit-spring-boot-starter (that artifact was never
+  published to Central — verified 404 on repo1.maven.org the day this example was written).
+
+  No relative path, no reactor module, no parent pointing at ../../sdks/java — this project
+  resolves envpit-sdk exactly the way a real external user would: from Central, by coordinate.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.envpit.example</groupId>
+  <artifactId>envpit-example-spring-boot</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+
+  <name>envpit-example-spring-boot</name>
+  <description>
+    Runnable Spring Boot example that resolves config from a real EnvPit server through the
+    published com.envpit:envpit-sdk, and makes it available via Spring's own Environment/@Value
+    — with secret-flagged keys verified absent from that same Environment.
+  </description>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.1.3</version>
+    <relativePath/>
+  </parent>
+
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <dependencies>
+    <!-- The published SDK — the whole point of this example. Not a reactor module, not a
+         relative path: a real Central coordinate, same as any external consumer would write. -->
+    <dependency>
+      <groupId>com.envpit</groupId>
+      <artifactId>envpit-sdk</artifactId>
+      <version>0.1.0</version>
+    </dependency>
+
+    <!-- Plain starter, no -web: this example needs no HTTP server, just Spring's
+         ApplicationContext + Environment + @Value machinery (a CommandLineRunner + a startup
+         log line is enough to demonstrate the integration; see task brief). -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>

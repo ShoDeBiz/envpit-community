@@ -1,0 +1,29 @@
+# Build/dependency output from the example projects. These directories are large, machine-
+# specific, and in the Java case contain signed release artifacts — none of it belongs in git.
+node_modules/
+dist/
+target/
+__pycache__/
+*.egg-info/
+.venv/
+venv/
+build/
+
+# Compiled Go example binaries. `go build` in an example directory drops one named after the
+# directory, with no extension — easy to miss in `git status` and pointless to version.
+examples/go-gin/go-gin
+examples/go-echo/go-echo
+
+# NEVER commit a key. The examples read ENVPIT_API_KEY from the environment; the documented
+# place to keep it is OUTSIDE this tree (~/.envpit-example.env), because a credential inside a
+# working tree eventually gets committed by someone in a hurry. These patterns are the backstop.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+.DS_Store
+
+# maven-shade-plugin regenerates this on every package; it is build output, not source.
+examples/java-dropwizard/dependency-reduced-pom.xml

@@ -1,0 +1,14 @@
+# Minimal Dropwizard config — no database, no security config, no Docker (task brief).
+# No API key and no EnvPit-resolved values anywhere in this file, on purpose: the SDK reads
+# ENVPIT_API_KEY/ENVPIT_HOST straight from the OS environment (see README.md), and
+# EnvpitExampleConfiguration#envpitConfig is populated programmatically, never via this YAML.
+server:
+  applicationConnectors:
+    - type: http
+      port: 18080
+  adminConnectors:
+    - type: http
+      port: 18081
+
+logging:
+  level: INFO

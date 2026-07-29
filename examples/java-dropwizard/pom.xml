@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  envpit-example-dropwizard — consumes the PUBLISHED com.envpit:envpit-sdk from Maven Central and
+  talks to a real EnvPit production API. No relative path, no reactor module — a real Central
+  coordinate, same as any external consumer would write.
+
+  Dropwizard, unlike Spring, has no relaxed-binding "Environment"/property-source merge system —
+  config normally comes from a YAML file deserialized into a Configuration subclass. This example
+  therefore populates the framework's OWN Configuration object programmatically at run() time
+  from the EnvpitClient snapshot (never from YAML, so the API key never touches a file in this
+  repo), and treats that populated Configuration instance as "the framework's configuration
+  object" the task brief asks the secret-filter demonstration to assert against.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.envpit.example</groupId>
+  <artifactId>envpit-example-dropwizard</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+
+  <name>envpit-example-dropwizard</name>
+  <description>
+    Runnable Dropwizard example that resolves config from a real EnvPit server through the
+    published com.envpit:envpit-sdk, exposes the resolved key NAMES via a Jersey resource and a
+    HealthCheck, and verifies secret-flagged keys never entered the framework's own Configuration
+    object.
+  </description>
+
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <dropwizard.version>4.0.17</dropwizard.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>io.dropwizard</groupId>
+        <artifactId>dropwizard-bom</artifactId>
+        <version>${dropwizard.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <!-- The published SDK — the whole point of this example. -->
+    <dependency>
+      <groupId>com.envpit</groupId>
+      <artifactId>envpit-sdk</artifactId>
+      <version>0.1.0</version>
+    </dependency>
+
+    <dependency>
+      <groupId>io.dropwizard</groupId>
+      <artifactId>dropwizard-core</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>io.dropwizard</groupId>
+      <artifactId>dropwizard-testing</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+        <configuration>
+          <release>17</release>
+        </configuration>
+      </plugin>
+      <!-- Dropwizard apps need every dependency on the runtime classpath at once — a shaded
+           (uber) jar is the standard way to run one with a plain `java -jar`, no exec:java or
+           external classpath wiring needed. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.5.1</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals><goal>shade</goal></goals>
+            <configuration>
+              <transformers>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <mainClass>com.envpit.example.dropwizard.EnvpitDropwizardExampleApplication</mainClass>
+                </transformer>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+              </transformers>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

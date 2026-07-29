@@ -1,0 +1,6 @@
+# Consumes the PUBLISHED envpit package from PyPI (no relative path, no -e ../..).
+# `~=0.1.0` mirrors the Node example's `^0.1.0` semver-caret intent: 0.1.x, never 0.2.0.
+# envpit.integrations.django has NO dependency on Django itself (it operates on any
+# MutableMapping) -- Django is only here because this IS a Django example.
+envpit~=0.1.0
+django~=5.1

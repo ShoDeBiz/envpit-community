@@ -1,0 +1,7 @@
+# EnvironmentPostProcessor discovery is still spring.factories-based in Spring Boot 3.1.x (only
+# @AutoConfiguration classes moved to META-INF/spring/...AutoConfiguration.imports — this SPI did
+# not). Verified against the real com.envpit:envpit-spring-boot-starter module in this same repo
+# (sdks/java/envpit-spring-boot-starter/src/main/resources/META-INF/spring.factories), which
+# documents having independently confirmed this by inspecting spring-boot-3.1.3.jar directly.
+org.springframework.boot.env.EnvironmentPostProcessor=\
+com.envpit.example.springboot.ExampleEnvpitEnvironmentPostProcessor

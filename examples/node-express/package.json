@@ -1,0 +1,13 @@
+{
+  "name": "envpit-example-node-express",
+  "private": true,
+  "type": "module",
+  "description": "Express app that loads config from EnvPit (via the PUBLISHED @envpit/sdk) into process.env before the app is built, so ordinary process.env.X code works untouched.",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "@envpit/sdk": "^0.1.0",
+    "express": "^5.1.0"
+  }
+}

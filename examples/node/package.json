@@ -1,0 +1,8 @@
+{
+  "name": "envpit-example-node",
+  "private": true,
+  "type": "module",
+  "description": "Consumes @envpit/sdk straight from npm — no workspace link, no relative path.",
+  "scripts": { "start": "node index.mjs" },
+  "dependencies": { "@envpit/sdk": "^0.1.0" }
+}
