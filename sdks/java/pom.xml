@@ -153,15 +153,14 @@
                 <id>sign-artifacts</id>
                 <phase>verify</phase>
                 <goals><goal>sign</goal></goals>
-                <configuration>
-                  <!-- Let gpg-agent supply the passphrase (pinentry / cached session) instead of
-                       putting it on the command line, where it would land in shell history and
-                       the process table. On CI, set MAVEN_GPG_PASSPHRASE as a secret env var. -->
-                  <gpgArguments>
-                    <arg>--pinentry-mode</arg>
-                    <arg>loopback</arg>
-                  </gpgArguments>
-                </configuration>
+                <!-- No gpgArguments on purpose. Forcing gpg's loopback pinentry mode here would
+                     make gpg ask the CALLER for the passphrase instead of gpg-agent, which breaks
+                     the local flow: the agent's own pinentry (pinentry-mac, configured in
+                     ~/.gnupg/gpg-agent.conf) is exactly what should prompt, so the passphrase is
+                     typed into a native dialog and never reaches a command line, a script or a
+                     build log. For unattended CI, add loopback mode plus MAVEN_GPG_PASSPHRASE as
+                     a secret there; it is a CI concern, not something to hardcode into every
+                     local release. -->
               </execution>
             </executions>
           </plugin>
