@@ -50,11 +50,13 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # SUPPLYCHAIN-audit.md §5, P0 (envpit main repo, bd:envpit-egu) — this SDK ships directly
-      # into customer build trees, so its own dev/build dependency tree (tsup, typescript,
-      # vitest) gets the same audit gate a runtime dependency would.
-      - name: Dependency audit
-        run: pnpm audit --audit-level=high
+      # SUPPLYCHAIN-audit.md §5, P0 (envpit main repo, bd:envpit-egu). --prod: this is the PUBLISH
+      # gate, so audit only the RUNTIME deps that actually ship in the tarball to a consumer.
+      # devDependencies (tsup, typescript, vitest, vite) never reach a customer build tree, so a
+      # dev-tooling CVE (e.g. vitest UI RCE) must not block a release. Dev/build-dep CVEs are
+      # tracked + burned down separately (bd:envpit-nt8r) rather than gating the ship.
+      - name: Dependency audit (runtime deps only)
+        run: pnpm audit --prod --audit-level=high
 
       # Gates before anything reaches the registry. A published version is permanent: npm allows
       # unpublish only within 72 hours, and the name+version pair is burned forever either way.
