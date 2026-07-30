@@ -95,3 +95,34 @@ describe('fetchConfig — conditional GET (Part 1)', () => {
     ).rejects.toBeInstanceOf(NetworkError);
   });
 });
+
+// bd:envpit-fkyv — parity with the Python SDK (`sdks/python/src/envpit/transport.py:115`,
+// `isinstance(parsed, dict)`): a 200 response whose BODY parses as valid JSON but whose
+// top-level shape is not a plain object (array/null/string/number/boolean) must be rejected
+// as a `NetworkError`, not passed through to `parseConfigSnapshotEnvelope`'s field checks (which
+// would otherwise throw a confusing "cannot read property 'values' of null/undefined" or, for
+// an array, silently read `undefined` for both fields). `resolve-body.json`'s existing cases only
+// cover malformed OBJECT bodies (`{}`, bare map, wrong field types) — none exercise a top-level
+// non-object, so this was previously unverified behavior in the Node SDK despite the underlying
+// check existing in `transport.ts`'s `parseConfigSnapshotEnvelope` (`notAnObject()`).
+describe('fetchConfig — rejects a top-level JSON body that is not a plain object (bd:envpit-fkyv)', () => {
+  it.each([
+    ['a JSON array', '[1,2,3]'],
+    ['JSON null', 'null'],
+    ['a JSON string', '"hello"'],
+    ['a JSON number', '42'],
+    ['a JSON boolean', 'true'],
+  ])('%s is rejected with NetworkError, not passed through as a snapshot', async (_label, body) => {
+    const cap = capturingFetch(new Response(body, { status: 200, headers: { 'content-type': 'application/json' } }));
+    await expect(
+      fetchConfig({ host: HOST, apiKey: 'epk_test', fetchImpl: cap.fetchImpl, timeoutMs: 1000 }),
+    ).rejects.toBeInstanceOf(NetworkError);
+  });
+
+  it('the error message matches the same "invalid JSON response" wording used for unparseable JSON (same failure class, error-mapping.json)', async () => {
+    const cap = capturingFetch(new Response('[1,2,3]', { status: 200, headers: { 'content-type': 'application/json' } }));
+    await expect(
+      fetchConfig({ host: HOST, apiKey: 'epk_test', fetchImpl: cap.fetchImpl, timeoutMs: 1000 }),
+    ).rejects.toThrow(`EnvPit returned an invalid JSON response from ${HOST}/api/v1/config.`);
+  });
+});
