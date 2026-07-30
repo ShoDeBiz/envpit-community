@@ -1,6 +1,6 @@
 {
   "name": "@envpit/sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Official Node.js/TypeScript SDK for EnvPit — configuration & secrets management without enterprise complexity.",
   "license": "MIT",
   "publishConfig": {

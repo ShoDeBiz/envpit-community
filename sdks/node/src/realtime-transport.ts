@@ -1,3 +1,4 @@
+import { inspect } from 'node:util';
 import { SseFrameParser, type SseFrame } from './sse-parser.js';
 import type { ConfigScope } from './transport.js';
 import type { ConnectionMode, ConnectionReason, Logger } from './types.js';
@@ -140,6 +141,26 @@ export class RealtimeTransport {
     void this.currentReader?.cancel().catch(() => undefined);
     this.currentReader = null;
     this.clearTimers();
+  }
+
+  /** AC-SEC-SDK3-1 (`outputs/THREATMODEL-envpit-0t2z-3.md` F1, Node parity-gap register item 1):
+   *  `this.params.apiKey` is a plain own property — `util.inspect`/`console.log`/
+   *  `JSON.stringify` would otherwise print it in full. Same `<redacted>` token/shape as
+   *  `EnvpitClient`'s own redaction and the sibling SDKs' `String()`/`__repr__`/`toString()`. */
+  private redactedSummary(): string {
+    return `RealtimeTransport(host=${JSON.stringify(this.params.host)}, apiKey=<redacted>)`;
+  }
+
+  [inspect.custom](): string {
+    return this.redactedSummary();
+  }
+
+  toString(): string {
+    return this.redactedSummary();
+  }
+
+  toJSON(): string {
+    return this.redactedSummary();
   }
 
   private clearTimers(): void {

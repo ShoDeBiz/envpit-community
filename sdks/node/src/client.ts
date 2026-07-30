@@ -1,3 +1,4 @@
+import { inspect } from 'node:util';
 import { SafeEmitter } from './emitter.js';
 import { EnvpitError, MissingKeyError, NetworkError, TypeMismatchError } from './errors.js';
 import { mergeSnapshotIntoEnv, type MergeIntoProcessEnvOptions, type MergeIntoProcessEnvResult } from './process-env-merge.js';
@@ -216,6 +217,36 @@ export class EnvpitClient {
   /** Alias of `stop()`. */
   close(): void {
     this.stop();
+  }
+
+  /** AC-SEC-SDK3-1 (`outputs/THREATMODEL-envpit-0t2z-3.md` F1, Node parity-gap register item 1):
+   *  `util.inspect`/`console.log` render every own property by default — including `apiKey`
+   *  AND the full `snapshot` value map (secrets included). Shared by the three redaction
+   *  overrides below so `console.log(client)`, `JSON.stringify(client)`, a debugger watch
+   *  expression, and an error-reporter object dump all see the SAME value-free/key-free text —
+   *  never the raw API key or a config value, only the safe key COUNT. Mirrors the `<redacted>`
+   *  token and shape already shipped in the sibling SDKs (Go `String()`/`GoString()`, Python
+   *  `__repr__`/`__str__`, Java `toString()`). */
+  private redactedSummary(): string {
+    const keyCount = this.snapshot === null ? 0 : Object.keys(this.snapshot.values).length;
+    return `EnvpitClient(host=${JSON.stringify(this.host)}, keys=${keyCount}, apiKey=<redacted>)`;
+  }
+
+  /** `console.log(client)` / a debugger watch expression / `require('node:util').inspect`
+   *  all route through this instead of enumerating own properties. */
+  [inspect.custom](): string {
+    return this.redactedSummary();
+  }
+
+  /** `String(client)` / template-literal interpolation (`` `${client}` ``). */
+  toString(): string {
+    return this.redactedSummary();
+  }
+
+  /** `JSON.stringify(client)` calls this instead of enumerating own properties — same leak
+   *  boundary as `[inspect.custom]` above, for the JSON-serialization path. */
+  toJSON(): string {
+    return this.redactedSummary();
   }
 
   /** Subscribes `listener` to `event` (`'change' | 'error' | 'connection'`). Returns an
