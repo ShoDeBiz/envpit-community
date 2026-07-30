@@ -53,6 +53,14 @@ jobs:
 
       - run: go vet ./...
 
+      # SUPPLYCHAIN-audit.md §5, P0 (envpit main repo, bd:envpit-egu) — go.mod carries no
+      # `require` block today (zero external deps), so this is checking the Go standard library
+      # itself for known vulnerabilities, which a deps-only scanner would miss entirely.
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
       - name: Test with the race detector
         # -race matters more than usual here: the SDK refreshes config on a background
         # goroutine while callers read it, and sdks/go/envpit has a goroutine_leak_test.go

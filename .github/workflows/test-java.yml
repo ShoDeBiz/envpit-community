@@ -46,6 +46,14 @@ jobs:
         run: mvn -B --no-transfer-progress test
         working-directory: sdks/java
 
+      # SUPPLYCHAIN-audit.md §5, P0 (envpit main repo, bd:envpit-egu) — the core SDK ships no
+      # runtime deps (JUnit is test-scope only, excluded from the published artifact per
+      # sdks/java/pom.xml), so this mostly documents that fact; run again below for the starter,
+      # which is the one artifact in this repo with a real (Spring Boot) dependency tree.
+      - name: Dependency audit (SDK)
+        run: mvn -B --no-transfer-progress org.owasp:dependency-check-maven:check
+        working-directory: sdks/java
+
       - name: Test the Spring Boot starter
         # Separate project — see the header note. `install` the SDK first so the starter can
         # resolve it from the local repository rather than from Maven Central, which would
@@ -53,3 +61,6 @@ jobs:
         run: |
           mvn -B --no-transfer-progress -DskipTests install -f sdks/java/pom.xml
           mvn -B --no-transfer-progress test -f sdks/java/envpit-spring-boot-starter/pom.xml
+
+      - name: Dependency audit (Spring Boot starter)
+        run: mvn -B --no-transfer-progress org.owasp:dependency-check-maven:check -f sdks/java/envpit-spring-boot-starter/pom.xml
