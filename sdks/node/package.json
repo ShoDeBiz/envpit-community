@@ -44,11 +44,14 @@
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "pnpm run typecheck && pnpm run test && pnpm run build"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@vitest/coverage-v8": "^2.1.9",
+    "fast-check": "^4.9.0",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
