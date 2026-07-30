@@ -1,4 +1,5 @@
 import { inspect } from 'node:util';
+import { InMemoryCacheStore, type CacheStore } from './cache-store.js';
 import { SafeEmitter } from './emitter.js';
 import { EnvpitError, MissingKeyError, NetworkError, TypeMismatchError } from './errors.js';
 import { mergeSnapshotIntoEnv, type MergeIntoProcessEnvOptions, type MergeIntoProcessEnvResult } from './process-env-merge.js';
@@ -88,10 +89,13 @@ export class EnvpitClient {
   private readonly emitter: SafeEmitter<EnvpitClientEvents>;
   private readonly scope: ConfigScope | undefined;
 
-  private snapshot: ConfigSnapshot | null = null;
-  private fetchedAt: Date | null = null;
+  // bd:envpit-ckv2: the cached snapshot/etag/fetchedAt triple lives behind the `CacheStore`
+  // seam (`cache-store.ts`) rather than as three loose fields, so a future opt-in disk-backed
+  // store can conform to the same interface and be swapped in via `EnvpitClientOptions` without
+  // touching this class's refresh/read logic. `InMemoryCacheStore` is the only implementation
+  // shipped in this release — behavior is unchanged, this is a seam, not a new cache tier.
+  private readonly cacheStore: CacheStore;
   private lastError: Error | null = null;
-  private etag: string | null = null;
   private lastChangeAt: Date | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private realtime: RealtimeTransport | null = null;
@@ -105,6 +109,24 @@ export class EnvpitClient {
   // issued by the time the response arrives. An overtaken (stale) response is discarded outright
   // — see `refresh()`.
   private refreshGeneration = 0;
+
+  /** Read-only views over the `CacheStore`'s single entry — every other method reads the cache
+   *  through these three instead of calling `this.cacheStore.get()` directly, so a `null` store
+   *  (nothing cached yet) collapses to the same "not loaded" shape (`null`) these fields had
+   *  before the `CacheStore` seam existed. Writes go through `writeCache`/`touchCacheFetchedAt`
+   *  below — never a direct field assignment, since the three values are stored as one
+   *  `CacheEntry`, not independently settable. */
+  private get snapshot(): ConfigSnapshot | null {
+    return this.cacheStore.get()?.snapshot ?? null;
+  }
+
+  private get fetchedAt(): Date | null {
+    return this.cacheStore.get()?.fetchedAt ?? null;
+  }
+
+  private get etag(): string | null {
+    return this.cacheStore.get()?.etag ?? null;
+  }
 
   private constructor(options: EnvpitClientOptions) {
     const apiKey = options.apiKey ?? process.env['ENVPIT_API_KEY'];
@@ -122,6 +144,7 @@ export class EnvpitClient {
     this.logger = options.logger;
     this.emitter = new SafeEmitter(this.logger);
     this.refreshMode = this.pollIntervalMs > 0 ? 'polling' : 'off';
+    this.cacheStore = new InMemoryCacheStore();
   }
 
   /**
@@ -406,12 +429,13 @@ export class EnvpitClient {
         // load `this.etag` is null, so `ifNoneMatch` is never sent (correct — nothing to
         // revalidate against yet) — a 304 arriving anyway means a misbehaving server, proxy, or
         // CDN returned it unconditionally. Silently "succeeding" here would leave
-        // `this.snapshot` at `null` while `load()` still resolves — violating `readRaw()`'s
-        // class invariant that every `get*()` after a resolved `load()` is safe, and making
-        // that guard's "should be unreachable" comment false. Treat it as fatal instead,
-        // matching the existing first-load-throws precedent below (`catch`'s
-        // `isFirstLoad || this.snapshot === null` propagation path).
-        if (this.snapshot === null) {
+        // the cache empty while `load()` still resolves — violating `readRaw()`'s class
+        // invariant that every `get*()` after a resolved `load()` is safe, and making that
+        // guard's "should be unreachable" comment false. Treat it as fatal instead, matching the
+        // existing first-load-throws precedent below (`catch`'s `isFirstLoad || this.snapshot
+        // === null` propagation path).
+        const cached = this.cacheStore.get();
+        if (cached === null) {
           throw new NetworkError(
             'EnvPit returned an unexpected 304 Not Modified on the first config fetch, with no ' +
               'previously cached config to reuse (no `If-None-Match` was sent — there was nothing ' +
@@ -420,19 +444,18 @@ export class EnvpitClient {
         }
         // 304 (bd:envpit-ed3h Part 1): our own `ifNoneMatch` matched the server's current
         // fingerprint — there is no new snapshot to parse or apply. Reuse whatever is already
-        // cached as-is; this IS a successful refresh (freshness advances, `lastError` clears),
-        // it just has nothing new to deliver, so no `change` event fires.
-        this.fetchedAt = new Date();
+        // cached as-is (same snapshot + etag, `fetchedAt` bumped to now); this IS a successful
+        // refresh (freshness advances, `lastError` clears), it just has nothing new to deliver,
+        // so no `change` event fires.
+        this.cacheStore.set({ snapshot: cached.snapshot, etag: cached.etag, fetchedAt: new Date() });
         this.lastError = null;
         return;
       }
 
       const { snapshot, etag } = result;
       const previousSnapshot = this.snapshot;
-      this.snapshot = snapshot;
-      this.fetchedAt = new Date();
+      this.cacheStore.set({ snapshot, etag, fetchedAt: new Date() });
       this.lastError = null;
-      this.etag = etag;
 
       // Consistent-read guarantee (§3.1 principle 3): the snapshot above is already applied
       // BEFORE we emit — a listener calling `client.get(...)` inside its handler sees the new
