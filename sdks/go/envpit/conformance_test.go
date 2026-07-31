@@ -404,6 +404,38 @@ func TestINV_SDK_12_env_var_used_when_no_explicit_key_given(t *testing.T) {
 	}
 }
 
+// ---- bd:envpit-ubky — ENVPIT_HOST auto-detect (mirror of ENVPIT_API_KEY): a self-hoster who
+// exports ENVPIT_API_KEY + ENVPIT_HOST and never calls WithHost must reach their own server, not
+// the cloud. Explicit WithHost still wins. -----------------------------------------------------
+
+func TestUbky_host_read_from_env_var_when_no_explicit_host(t *testing.T) {
+	t.Setenv("ENVPIT_API_KEY", "epk_test")
+	t.Setenv("ENVPIT_HOST", "http://self-hosted.internal:8080")
+	rt := &fakeTransport{configFn: fetchQueue(t, `{"K":"v"}`)}
+	client, err := NewClient(context.Background(), WithPollInterval(0), WithHTTPClient(fakeHTTPClient(rt)), WithLogger(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if client.host != "http://self-hosted.internal:8080" {
+		t.Fatalf("expected host from ENVPIT_HOST, got %q", client.host)
+	}
+}
+
+func TestUbky_explicit_host_wins_over_env_var(t *testing.T) {
+	t.Setenv("ENVPIT_API_KEY", "epk_test")
+	t.Setenv("ENVPIT_HOST", "http://env-host.internal:8080")
+	rt := &fakeTransport{configFn: fetchQueue(t, `{"K":"v"}`)}
+	client, err := NewClient(context.Background(), WithHost("http://explicit.internal:9000"), WithPollInterval(0), WithHTTPClient(fakeHTTPClient(rt)), WithLogger(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if client.host != "http://explicit.internal:9000" {
+		t.Fatalf("expected explicit host to win, got %q", client.host)
+	}
+}
+
 func TestINV_SDK_12_no_api_key_anywhere_returns_authentication_error(t *testing.T) {
 	t.Setenv("ENVPIT_API_KEY", "")
 	_, err := NewClient(context.Background(), WithPollInterval(0))

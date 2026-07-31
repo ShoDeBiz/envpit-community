@@ -24,6 +24,7 @@ type clientConfig struct {
 	httpClient   *http.Client
 	logger       Logger
 	loggerSet    bool
+	hostSet      bool
 }
 
 func (c *clientConfig) String() string {
@@ -53,11 +54,17 @@ func WithAPIKey(apiKey string) Option {
 	return func(c *clientConfig) { c.apiKey = apiKey }
 }
 
-// WithHost overrides the API host (scheme + authority only, no path). Default: the production
-// single-origin edge https://envpit.com. Override for self-hosted/local dev, e.g.
+// WithHost overrides the API host (scheme + authority only, no path). Falls back to the
+// ENVPIT_HOST environment variable when omitted (bd:envpit-ubky, mirroring WithAPIKey) — so a
+// self-hoster who exports ENVPIT_API_KEY + ENVPIT_HOST reaches their own server, not the cloud.
+// An explicit WithHost always wins over the environment. Default when neither is set: the
+// production single-origin edge https://envpit.com. Override for self-hosted/local dev, e.g.
 // http://localhost:8080.
 func WithHost(host string) Option {
-	return func(c *clientConfig) { c.host = host }
+	return func(c *clientConfig) {
+		c.host = host
+		c.hostSet = true
+	}
 }
 
 // WithPollInterval sets the background refresh interval. Default 60s. A value <= 0 disables

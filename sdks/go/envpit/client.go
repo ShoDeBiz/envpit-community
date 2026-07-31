@@ -121,6 +121,16 @@ func NewClient(ctx context.Context, opts ...Option) (*Client, error) {
 			"envpit: no API key found — set the ENVPIT_API_KEY environment variable, or pass envpit.WithAPIKey(...) to Load")
 	}
 
+	// bd:envpit-ubky — mirror the ENVPIT_API_KEY fallback above: when WithHost was not passed,
+	// fall back to the ENVPIT_HOST env var before the cloud default, so a self-hoster who exports
+	// ENVPIT_API_KEY + ENVPIT_HOST reaches their own server. An explicit WithHost always wins.
+	host := cfg.host
+	if !cfg.hostSet {
+		if envHost := os.Getenv("ENVPIT_HOST"); envHost != "" {
+			host = envHost
+		}
+	}
+
 	logger := cfg.logger
 	if !cfg.loggerSet {
 		logger = newSlogLogger(slog.Default())
@@ -128,7 +138,7 @@ func NewClient(ctx context.Context, opts ...Option) (*Client, error) {
 
 	c := &Client{
 		apiKey:       apiKey,
-		host:         strings.TrimRight(cfg.host, "/"),
+		host:         strings.TrimRight(host, "/"),
 		pollInterval: cfg.pollInterval,
 		timeout:      cfg.timeout,
 		httpClient:   cfg.httpClient,

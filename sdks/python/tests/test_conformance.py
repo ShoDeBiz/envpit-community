@@ -496,3 +496,35 @@ def test_inv_sdk_12_config_fetch_sends_x_api_key_header_and_never_authorization(
     assert any(name.lower() == "x-api-key" for name in seen_headers)
     assert not any(name.lower() == "authorization" for name in seen_headers)
     assert seen_headers[[n for n in seen_headers if n.lower() == "x-api-key"][0]] == "epk_test"
+
+
+# ---------------------------------------------------------------------------
+# bd:envpit-ubky — ENVPIT_HOST auto-detect (mirror of the ENVPIT_API_KEY behaviour above):
+# a self-hoster who exports ENVPIT_API_KEY + ENVPIT_HOST and never passes host= must reach
+# their own server, not the cloud. Explicit host= still wins.
+# ---------------------------------------------------------------------------
+
+
+def test_ubky_host_read_from_env_var_when_no_explicit_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ENVPIT_HOST", "http://self-hosted.internal:8080")
+    client = EnvpitClient.load(
+        api_key="epk_test", poll_interval=0, _fetch_impl=fetch_queue(({"K": "v"}, None))
+    )
+    try:
+        assert client._host == "http://self-hosted.internal:8080"
+    finally:
+        client.close()
+
+
+def test_ubky_explicit_host_wins_over_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ENVPIT_HOST", "http://env-host.internal:8080")
+    client = EnvpitClient.load(
+        api_key="epk_test",
+        host="http://explicit.internal:9000",
+        poll_interval=0,
+        _fetch_impl=fetch_queue(({"K": "v"}, None)),
+    )
+    try:
+        assert client._host == "http://explicit.internal:9000"
+    finally:
+        client.close()

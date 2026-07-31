@@ -97,7 +97,10 @@ class EnvpitClient:
             )
 
         self._api_key = resolved_key
-        self._host = (host or DEFAULT_HOST).rstrip("/")
+        # bd:envpit-ubky — mirror the api_key resolution above: fall back to ENVPIT_HOST before
+        # the cloud default, so a self-hoster setting ENVPIT_API_KEY + ENVPIT_HOST in the env
+        # (and never passing host=) reaches their own server, not the cloud. Explicit host= wins.
+        self._host = (host or os.environ.get("ENVPIT_HOST") or DEFAULT_HOST).rstrip("/")
         self._poll_interval_s = poll_interval
         self._timeout_s = timeout
         self._logger = logger
