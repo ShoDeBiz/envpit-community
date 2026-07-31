@@ -438,6 +438,25 @@ class ConformanceTest {
     }
 
     @Test
+    void test_ubky_explicit_host_wins_over_env_var_when_both_are_set() throws Exception {
+        // bd:envpit-ubky. Same portability caveat as INV-SDK-12: ENVPIT_HOST can't be set from
+        // within this JVM portably, so this asserts the always-testable half — an explicitly-passed
+        // host is the one the client actually uses, regardless of ENVPIT_HOST in this environment.
+        // The env-fallback half is identical logic to the TDD-proven node/python/go SDKs.
+        try (TestSupport.TestServer server = TestSupport.TestServer.start()) {
+            server.configHandler = ex -> {
+                TestSupport.respond(ex, 200, "{\"values\":{},\"secretKeys\":[]}", null);
+                return null;
+            };
+            EnvpitClient client = EnvpitClient.builder()
+                    .apiKey("epk_test").host(server.baseUrl).pollInterval(Duration.ZERO)
+                    .httpClient(TestSupport.testHttpClient()).logger(null).load();
+            client.close();
+            assertEquals(server.baseUrl.replaceAll("/+$", ""), client.host);
+        }
+    }
+
+    @Test
     void test_INV_SDK_12_no_api_key_anywhere_raises_authentication_exception() {
         String old = System.getenv("ENVPIT_API_KEY");
         assertTrue(old == null || old.isBlank(),

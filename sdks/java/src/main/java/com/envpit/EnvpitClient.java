@@ -123,7 +123,9 @@ public final class EnvpitClient implements AutoCloseable {
      */
     public static final class Builder {
         private String apiKey;
-        private String host = DEFAULT_HOST;
+        // null until host(...) is called; resolved in load() as explicit > ENVPIT_HOST env >
+        // DEFAULT_HOST, mirroring apiKey (bd:envpit-ubky).
+        private String host;
         private Duration pollInterval = DEFAULT_POLL_INTERVAL;
         private Duration timeout = DEFAULT_TIMEOUT;
         private HttpClient httpClient;
@@ -139,7 +141,10 @@ public final class EnvpitClient implements AutoCloseable {
             return this;
         }
 
-        /** Default {@value EnvpitClient#DEFAULT_HOST}. Override for self-hosted/local dev. */
+        /**
+         * Optional — falls back to the {@code ENVPIT_HOST} environment variable, then
+         * {@value EnvpitClient#DEFAULT_HOST} (bd:envpit-ubky). Override for self-hosted/local dev.
+         */
         public Builder host(String host) {
             this.host = Objects.requireNonNull(host, "host");
             return this;
@@ -203,7 +208,17 @@ public final class EnvpitClient implements AutoCloseable {
                         "EnvPit: no API key found. Set the ENVPIT_API_KEY environment variable, or call .apiKey(...) on the builder.");
             }
 
-            String resolvedHost = stripTrailingSlash(host != null ? host : DEFAULT_HOST);
+            // bd:envpit-ubky — mirror the ENVPIT_API_KEY fallback above: explicit host wins,
+            // else ENVPIT_HOST from the environment, else the cloud default — so a self-hoster
+            // who exports ENVPIT_API_KEY + ENVPIT_HOST reaches their own server, not the cloud.
+            String resolvedHost = host;
+            if (resolvedHost == null || resolvedHost.isEmpty()) {
+                resolvedHost = System.getenv("ENVPIT_HOST");
+            }
+            if (resolvedHost == null || resolvedHost.isEmpty()) {
+                resolvedHost = DEFAULT_HOST;
+            }
+            resolvedHost = stripTrailingSlash(resolvedHost);
             Duration resolvedTimeout = timeout != null ? timeout : DEFAULT_TIMEOUT;
             HttpClient resolvedHttpClient = httpClient != null ? httpClient : defaultHttpClient(resolvedTimeout);
             EnvpitLogger resolvedLogger = loggerExplicitlySet ? logger : new JulEnvpitLogger();
