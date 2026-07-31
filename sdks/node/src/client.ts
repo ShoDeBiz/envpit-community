@@ -137,7 +137,11 @@ export class EnvpitClient {
     }
     this.apiKey = apiKey;
     this.scope = resolveScopeOverride(options.project, options.environment);
-    this.host = (options.host ?? DEFAULT_HOST).replace(/\/+$/, '');
+    // bd:envpit-ubky — mirror the apiKey resolution above: fall back to the ENVPIT_HOST env
+    // var before DEFAULT_HOST, so a self-hoster who sets ENVPIT_API_KEY + ENVPIT_HOST in the
+    // environment (and never passes { host }) reaches their own server instead of silently
+    // hitting the cloud. Explicit { host } still wins.
+    this.host = (options.host ?? process.env['ENVPIT_HOST'] ?? DEFAULT_HOST).replace(/\/+$/, '');
     this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);

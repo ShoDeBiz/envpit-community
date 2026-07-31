@@ -120,7 +120,7 @@ frameworks have their own config-loading order you need to respect:
 ```ts
 const envpit = await EnvpitClient.load({
   apiKey: 'epk_...',          // optional — defaults to process.env.ENVPIT_API_KEY
-  host: 'https://envpit.com', // optional — override for self-hosted/local dev
+  host: 'https://envpit.com', // optional — defaults to process.env.ENVPIT_HOST, then the cloud (self-hosted/local dev)
   pollIntervalMs: 60_000,     // optional — 0 disables background refresh
   timeoutMs: 5_000,           // optional — per-request timeout
 });

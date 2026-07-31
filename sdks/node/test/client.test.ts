@@ -39,6 +39,41 @@ describe('EnvpitClient.load() — apiKey resolution', () => {
   });
 });
 
+describe('EnvpitClient.load() — host resolution (bd:envpit-ubky)', () => {
+  it('falls back to the ENVPIT_HOST env var when { host } is not passed', async () => {
+    const original = process.env['ENVPIT_HOST'];
+    process.env['ENVPIT_HOST'] = 'http://self-hosted.internal:8080';
+    try {
+      const client = await EnvpitClient.load({
+        apiKey: 'epk_test',
+        fetchImpl: fakeFetch([() => jsonResponse({ FOO: 'bar' })]),
+        pollIntervalMs: 0,
+      });
+      expect(String(client)).toContain('host="http://self-hosted.internal:8080"');
+    } finally {
+      if (original !== undefined) process.env['ENVPIT_HOST'] = original;
+      else delete process.env['ENVPIT_HOST'];
+    }
+  });
+
+  it('lets an explicit { host } win over the ENVPIT_HOST env var', async () => {
+    const original = process.env['ENVPIT_HOST'];
+    process.env['ENVPIT_HOST'] = 'http://env-host.internal:8080';
+    try {
+      const client = await EnvpitClient.load({
+        apiKey: 'epk_test',
+        host: 'http://explicit.internal:9000',
+        fetchImpl: fakeFetch([() => jsonResponse({ FOO: 'bar' })]),
+        pollIntervalMs: 0,
+      });
+      expect(String(client)).toContain('host="http://explicit.internal:9000"');
+    } finally {
+      if (original !== undefined) process.env['ENVPIT_HOST'] = original;
+      else delete process.env['ENVPIT_HOST'];
+    }
+  });
+});
+
 describe('stale-while-revalidate on background refresh failure', () => {
   it('keeps serving the last good snapshot when a later refresh fails, and records the error on cacheInfo', async () => {
     vi.useFakeTimers();
